@@ -99,11 +99,20 @@ async def create_session(request: Request):
     _check_origin(request)
     _rate_limit(_client_ip(request))
 
+    # Optional JSON body: { "voice": "alloy" }
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+
+    requested_voice = (body.get("voice") or "").strip() if isinstance(body, dict) else ""
+    voice = requested_voice if requested_voice in settings.VOICE_ALLOWED else settings.VOICE_DEFAULT
+
     url = "https://api.openai.com/v1/realtime/sessions"
     payload = {
         "model": settings.OPENAI_REALTIME_MODEL,
         "modalities": ["audio", "text"],
-        "voice": "alloy",
+        "voice": voice,  # <-- selected voice
         "instructions": NA_GUARDRAILS,
         # "input_audio_format": "pcm16",  # optional
     }
