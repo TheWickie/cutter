@@ -1,49 +1,44 @@
 """
-Settings module for Cutter Voice Pilot backend.
+Settings for Cutter Voice Pilot (root layout).
 
-This module loads configuration from environment variables (optionally via a
-``.env`` file using python‑dotenv) and exposes them as constants.  It also
-normalises certain values, such as allowed origins and TTLs.
+Loads env vars (optionally via .env) and exposes normalized constants.
 """
 
 import os
 from dotenv import load_dotenv
 
-# Load environment variables from a .env file if present.
+# Load .env if present (harmless in production; Render uses dashboard vars)
 load_dotenv()
 
-# OpenAI API key used for server‑side calls.  Never expose this to clients.
-OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
+# --- Core OpenAI config ---
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
+if not OPENAI_API_KEY:
+    # Keep running so /health works, but /session will fail fast upstream.
+    # You can choose to raise here if you prefer a hard fail:
+    # raise RuntimeError("OPENAI_API_KEY is required")
+    pass
 
-# Name of the OpenAI realtime model to use.  Defaults to the current stable
-# realtime model if not specified.
-OPENAI_REALTIME_MODEL: str = os.getenv(
-    "OPENAI_REALTIME_MODEL", "gpt-4o-realtime-preview"
-)
+OPENAI_REALTIME_MODEL = os.getenv("OPENAI_REALTIME_MODEL", "gpt-4o-realtime-preview").strip()
 
-# Comma‑separated list of allowed origins for CORS.  Split and strip empty
-# entries to form a list.  For example: "https://localhost,https://127.0.0.1".
-ALLOWED_ORIGINS: list[str] = [
-    origin.strip()
-    for origin in os.getenv("ALLOWED_ORIGINS", "").split(",")
-    if origin.strip()
-]
+# --- Server config ---
+APP_HOST = os.getenv("APP_HOST", "0.0.0.0")
+APP_PORT = int(os.getenv("APP_PORT", "8080"))
 
-# TTL for realtime session tokens in seconds.  Defaults to 5 minutes.
-try:
-    EPHEMERAL_SESSION_TTL_SECONDS: int = int(
-        os.getenv("EPHEMERAL_SESSION_TTL_SECONDS", "300")
-    )
-except ValueError:
-    EPHEMERAL_SESSION_TTL_SECONDS = 300
+# --- CORS / Origin allow-list ---
+# Comma-separated list of exact origins (no wildcards)
+_raw_origins = os.getenv("ALLOWED_ORIGINS", "https://localhost,https://127.0.0.1")
+ALLOWED_ORIGINS = [o.strip() for o in _raw_origins.split(",") if o.strip()]
 
-# Host and port for the FastAPI application.
-APP_HOST: str = os.getenv("APP_HOST", "0.0.0.0")
-try:
-    APP_PORT: int = int(os.getenv("APP_PORT", "8080"))
-except ValueError:
-    APP_PORT = 8080
+# --- Session TTL (no longer sent to OpenAI; kept for future/internal use) ---
+EPHEMERAL_SESSION_TTL_SECONDS = int(os.getenv("EPHEMERAL_SESSION_TTL_SECONDS", "300"))
 
-# ElevenLabs configuration stub – left here for future expansion.  Do not
-# implement TTS switching now; see backend/README.md for details.
-ELEVENLABS_API_KEY: str | None = os.getenv("ELEVENLABS_API_KEY")
+# --- Voice selection (used by /session) ---
+# Default voice if none/invalid is requested.
+VOICE_DEFAULT = os.getenv("OPENAI_REALTIME_VOICE", "alloy").strip() or "alloy"
+
+# Comma-separated allow-list of voices you offer to users.
+# You can change this from Render without code changes.
+_voice_list = os.getenv("OPENAI_REALTIME_VOICES", "alloy,verse,aria").split(",")
+VOICE_ALLOWED = {v.strip() for v in _voice_list if v.strip()}
+if not VOICE_ALLOWED:
+    VOICE_ALLOWED = {VOICE_DEFAULT}
