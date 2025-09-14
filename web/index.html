@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cutter Voice Pilot</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>Cutter Voice Pilot</h1>
+    <p class="privacy">
+      This experimental service respects your anonymity and does not record or
+      store your conversations.  It is a digital helper and does not replace
+      a sponsor or emergency services.
+    </p>
+  </header>
+
+  <main>
+    <section id="call-section" class="call-section">
+      <button id="callButton" class="call-button">Call the helper</button>
+      <div id="status" class="status status-disconnected">Disconnected</div>
+      <div id="transcript" class="transcript" aria-live="polite"></div>
+    </section>
+
+    <section class="crisis-info">
+      <p>If you are in immediate danger or feel at risk, please hang up and
+         call <strong>999</strong> or <strong>Samaritans 116&nbsp;123</strong>.
+         Under‑18s can call <strong>Childline 0800&nbsp;1111</strong>.</p>
+    </section>
+  </main>
+
+  <footer>
+    <p class="disclaimer">
+      This digital helper is an interim support tool for NA members.  It is
+      not affiliated with nor does it replace your NA sponsor, therapist or any
+      emergency service.  Please connect with your local NA fellowship for
+      ongoing support.
+    </p>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
