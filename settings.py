@@ -34,11 +34,11 @@ EPHEMERAL_SESSION_TTL_SECONDS = int(os.getenv("EPHEMERAL_SESSION_TTL_SECONDS", "
 
 # --- Voice selection (used by /session) ---
 # Default voice if none/invalid is requested.
-VOICE_DEFAULT = os.getenv("OPENAI_REALTIME_VOICE", "alloy").strip() or "alloy"
+VOICE_DEFAULT = os.getenv("OPENAI_REALTIME_VOICE", "spruce").strip() or "spruce"
 
 # Comma-separated allow-list of voices you offer to users.
 # You can change this from Render without code changes.
-_voice_list = os.getenv("OPENAI_REALTIME_VOICES", "alloy,verse,aria").split(",")
+_voice_list = os.getenv("OPENAI_REALTIME_VOICES", "alloy,verse,aria,spruce").split(",")
 VOICE_ALLOWED = {v.strip() for v in _voice_list if v.strip()}
 if not VOICE_ALLOWED:
     VOICE_ALLOWED = {VOICE_DEFAULT}
