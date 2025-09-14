@@ -105,7 +105,6 @@ async def create_session(request: Request):
         "modalities": ["audio", "text"],
         "voice": "alloy",
         "instructions": NA_GUARDRAILS,
-        "expires_in": settings.EPHEMERAL_SESSION_TTL_SECONDS,
         # "input_audio_format": "pcm16",  # optional
     }
     headers = {
