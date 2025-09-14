@@ -1,80 +1,51 @@
-# Cutter Voice Pilot – Backend
+# Cutter v2 Backend
 
-This directory contains the server‑side code for the Cutter Voice Pilot.  The
-backend is responsible for issuing short‑lived tokens that allow the browser
-to establish a WebRTC connection with OpenAI’s realtime API.  It also enforces
-CORS policies and basic rate limiting.
+Redis-backed FastAPI service providing text and optional voice chat for the Cutter project.
 
-## Quick start
+## Setup
 
-Follow these steps to get a development version of the backend running:
-
-1. **Create and activate a virtual environment**:
-
+1. Create and activate a virtual environment
    ```bash
    python -m venv .venv
-   source .venv/bin/activate  # On Windows use: .\.venv\Scripts\activate
+   source .venv/bin/activate
    ```
-
-2. **Install dependencies**:
-
+2. Install dependencies
    ```bash
    pip install -r requirements.txt
    ```
-
-3. **Configure your environment**:
-
-   Copy the provided `.env.example` to `.env` and fill in your own
-   OpenAI API key and any other settings:
-
+3. Configure environment
    ```bash
    cp .env.example .env
    ```
-
-   Then edit `.env` and set `OPENAI_API_KEY` to your secret key.  Adjust
-   `ALLOWED_ORIGINS` to include any development hosts that should be
-   permitted to call the API.
-
-4. **Run the server**:
-
-   Start the FastAPI application with Uvicorn:
-
+   Fill in the values (OpenAI key, Redis URL, helplines, etc.).
+4. Run the server
    ```bash
-   uvicorn app:app --host "${APP_HOST}" --port "${APP_PORT}" --reload
+   uvicorn main:app --reload
    ```
 
-   By default the service binds to `0.0.0.0:8080`.  The `--reload` flag
-   automatically restarts the server when you modify Python files.
+## Environment Variables
+- `OPENAI_API_KEY`
+- `OPENAI_CHAT_MODEL`
+- `REDIS_URL` (use rediss:// for TLS)
+- `ALLOWED_ORIGINS`
+- `VOICE_ALLOWED`
+- `NA_HELPLINE_UK`
+- `EMERGENCY_UK`
+- `SESSION_TTL_SECONDS`
+- `RATE_LIMIT_PER_MINUTE`
+- `LOG_LEVEL`
 
-## CORS and origin allow list
+## Redis
+The service stores sessions and user memory in Redis. Use Redis Cloud or another managed instance. For local development the tests use `fakeredis`.
 
-The backend restricts which origins may request session tokens via the
-`POST /session` endpoint.  Set `ALLOWED_ORIGINS` in `.env` to a comma‑separated
-list of fully qualified URLs (for example: `https://localhost,https://127.0.0.1`).
-Requests from any other origin will result in a **403** error.
+## Tests
+Run the test suite with:
+```bash
+pytest
+```
 
-## Rate limiting
+## Deployment
+On Render, set `main:app` as the entry point and configure environment variables in the dashboard. Provide a TLS Redis URL and OpenAI key.
 
-To prevent abuse, the backend implements a simple per‑IP rate limiter.  Each
-client IP may request up to 10 sessions per 60‑second window.  Excess requests
-return a **429** error.  For more robust production deployments you should
-consider a distributed rate‑limiting strategy.
-
-## Troubleshooting
-
-- **Mic permission errors**: The frontend cannot access the microphone unless
-  the user grants permission.  Ensure your browser prompts for mic access and
-  that permission is granted.
-- **CORS errors**: If you see “Origin not allowed”, update `ALLOWED_ORIGINS`
-  in your `.env` to include the page’s URL.
-- **HTTPS**: Browsers often require HTTPS to access audio devices.  The
-  development server uses HTTP, but localhost is typically exempt.  For a
-  production deployment, run behind an HTTPS proxy such as Nginx or Caddy.
-
-## ElevenLabs TTS (optional)
-
-This backend currently relies solely on OpenAI’s realtime API for speech
-synthesis and recognition.  If you wish to integrate another TTS provider
-(for example, ElevenLabs) in the future, you can include your API key in the
-.env file under `ELEVENLABS_API_KEY` and modify `app.py` accordingly.  At
-present, the backend does not use this key.
+## Frontend
+`web/js/cutter-client.js` offers minimal helpers for the WordPress frontend to call the API.
