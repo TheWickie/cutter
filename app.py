@@ -1,78 +1,71 @@
 # app.py
 """
-Cutter Voice Pilot – FastAPI backend
+Cutter Voice Pilot – FastAPI backend (root layout)
 
 Endpoints:
   GET  /health   -> { ok: True }
-  POST /session  -> returns { client_secret, model, expires_at } for OpenAI Realtime
+  POST /session  -> { client_secret, model, expires_at }
 
 Notes:
-- Expects settings.py in the same directory (module import, not package import).
-- Enforces Origin allow-list and simple per-IP rate limiting.
-- Never exposes OPENAI_API_KEY to the browser.
+- This file lives at the repo root next to settings.py.
+- Uses module import (import settings), not a relative import.
+- Defines `app` (lowercase) so `uvicorn app:app` works on Render.
 """
 
+import ipaddress
 import os
 import time
-import ipaddress
-from typing import Dict, Deque
 from collections import deque
+from typing import Deque, Dict
 
 import httpx
-from fastapi import FastAPI, Request, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
-# IMPORTANT: now that files are at repo ROOT, use module import (no leading dot)
-import settings  # <-- this is the change vs the earlier relative import
+import settings  # <-- important: root-level import, no leading dot
 
+app = FastAPI(title="Cutter Voice Pilot", version="0.1.0")
 
-APP = FastAPI(title="Cutter Voice Pilot", version="0.1.0")
-
-# CORS: allow only configured origins
-APP.add_middleware(
+# CORS: exact origins only
+app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.ALLOWED_ORIGINS,
     allow_credentials=False,
-    allow_methods=["POST", "GET", "OPTIONS"],
+    allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
 )
 
-# In-memory token bucket per IP (very light; restarts clear it)
-RATE_LIMIT_WINDOW_SEC = 60
-RATE_LIMIT_MAX_HITS = 10
-_recent_hits: Dict[str, Deque[float]] = {}
+# Very light per-IP rate limit (10 req/min)
+_RATE_WINDOW = 60.0
+_RATE_MAX = 10
+_hits: Dict[str, Deque[float]] = {}
 
 
 def _client_ip(req: Request) -> str:
-    # Respect common proxy headers if present (Render puts X-Forwarded-For)
     xff = req.headers.get("x-forwarded-for", "")
-    ip = xff.split(",")[0].strip() if xff else req.client.host
-    # Normalise: ensure it parses as IP (fallback to req.client.host)
+    ip = xff.split(",")[0].strip() if xff else (req.client.host if req.client else "0.0.0.0")
     try:
         ipaddress.ip_address(ip)
     except ValueError:
-        ip = req.client.host
+        ip = "0.0.0.0"
     return ip
 
 
 def _rate_limit(ip: str) -> None:
     now = time.time()
-    dq = _recent_hits.setdefault(ip, deque())
-    # drop old entries
-    while dq and now - dq[0] > RATE_LIMIT_WINDOW_SEC:
+    dq = _hits.setdefault(ip, deque())
+    while dq and (now - dq[0]) > _RATE_WINDOW:
         dq.popleft()
-    if len(dq) >= RATE_LIMIT_MAX_HITS:
-        raise HTTPException(status_code=429, detail="Too many requests, please slow down.")
+    if len(dq) >= _RATE_MAX:
+        raise HTTPException(status_code=429, detail="Too many requests, slow down.")
     dq.append(now)
 
 
 def _check_origin(req: Request) -> None:
     origin = req.headers.get("origin")
     if not origin:
-        # Block calls without Origin to avoid cross-site misuse
         raise HTTPException(status_code=400, detail="Missing Origin header.")
-    # Exact match only (no wildcard)
     if origin not in settings.ALLOWED_ORIGINS:
         raise HTTPException(status_code=403, detail=f"Origin not allowed: {origin}")
 
@@ -80,9 +73,8 @@ def _check_origin(req: Request) -> None:
 NA_GUARDRAILS = (
     "You are **NA Interim Sponsor (Pilot)** for the UK North East Area. "
     "You are **not** a sponsor, clinician, therapist, or emergency service. "
-    "You uphold NA spiritual principles (honesty, open-mindedness, willingness, humility, "
-    "compassion, unity, service) and NA Traditions (anonymity, non-endorsement, autonomy). "
-    "Always:\n"
+    "You uphold NA spiritual principles (honesty, open-mindedness, willingness, humility, compassion, unity, service) "
+    "and NA Traditions (anonymity, non-endorsement, autonomy). Always:\n"
     "• Start by asking for consent to proceed and remind the caller of privacy basics.\n"
     "• Encourage meetings, NA literature, and connection with members; you do not replace a sponsor.\n"
     "• If there is imminent risk (self-harm, overdose, harm to others), say: “I’m worried about your safety.” "
@@ -97,17 +89,16 @@ NA_GUARDRAILS = (
 )
 
 
-@APP.get("/health")
+@app.get("/health")
 async def health():
     return {"ok": True}
 
 
-@APP.post("/session")
+@app.post("/session")
 async def create_session(request: Request):
     _check_origin(request)
     _rate_limit(_client_ip(request))
 
-    # Create an ephemeral OpenAI Realtime session
     url = "https://api.openai.com/v1/realtime/sessions"
     payload = {
         "model": settings.OPENAI_REALTIME_MODEL,
@@ -115,10 +106,8 @@ async def create_session(request: Request):
         "voice": "alloy",
         "instructions": NA_GUARDRAILS,
         "expires_in": settings.EPHEMERAL_SESSION_TTL_SECONDS,
-        # Optional: you can include `input_audio_format` if you want to force PCM16
-        # "input_audio_format": "pcm16",
+        # "input_audio_format": "pcm16",  # optional
     }
-
     headers = {
         "Authorization": f"Bearer {settings.OPENAI_API_KEY}",
         "Content-Type": "application/json",
@@ -131,20 +120,21 @@ async def create_session(request: Request):
             raise HTTPException(status_code=502, detail=f"Upstream error: {e!s}")
 
     if resp.status_code >= 400:
-        # Redact secrets; pass through upstream message for debugging
         try:
             detail = resp.json()
         except Exception:
             detail = resp.text
         raise HTTPException(status_code=resp.status_code, detail=detail)
 
-    data = resp.json()
-    # Expected keys: client_secret, model, expires_at
-    # Return them as-is, but never log them.
-    return JSONResponse(data)
+    return JSONResponse(resp.json())
 
 
-# If you prefer to run with `python app.py` locally for quick checks:
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("app:APP", host=os.getenv("APP_HOST", "0.0.0.0"), port=int(os.getenv("APP_PORT", "8080")), reload=True)
+
+    uvicorn.run(
+        "app:app",
+        host=os.getenv("APP_HOST", "0.0.0.0"),
+        port=int(os.getenv("APP_PORT", "8080")),
+        reload=True,
+    )
