@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException, Request
 
 from core.redis_store import get_client
 from core.rate_limit import rate_limit
-from core.auth_utils import normalize_name, hash_passphrase, verify_passphrase
+from core.auth_utils import normalize_name, hash_passphrase, verify_passphrase, normalize_pass_for_debug
 from schemas.admin import AdminUserUpsert, AdminVerifyPass
 
 router = APIRouter(prefix="/v2/admin")
@@ -126,3 +126,43 @@ def user_by_display(display_name: str, request: Request):
         "has_passphrase": has_pp,
     }
     return {"found": True, **safe}
+
+
+@router.post("/debug-pass")
+def debug_pass(body: AdminVerifyPass, request: Request):
+    """Admin-only debug endpoint to inspect normalization and verify outcome.
+
+    Returns only non-sensitive diagnostics. It echoes the normalized attempt
+    because the admin typed it, but never returns stored salts or hashes.
+    """
+    rate_limit(request)
+    _require_admin(request)
+    r = get_client()
+    dn = normalize_name(body.display_name)
+    uid = r.get(f"name_to_user:{dn}")
+    found = bool(uid)
+    result: dict = {
+        "found": found,
+        "display_name_normalized": dn,
+    }
+    if not found:
+        return result
+    user = r.hgetall(f"user:{uid}")
+    salt = user.get("pass_salt", "")
+    phash = user.get("pass_hash", "")
+    has_pp = bool(salt and phash)
+    norm = normalize_pass_for_debug(body.passphrase)
+    verified = bool(has_pp and verify_passphrase(salt, phash, body.passphrase))
+    contains_zero_width = any(ch in body.passphrase for ch in ["\u200B", "\u200C", "\u200D", "\uFEFF"])
+    result.update(
+        {
+            "user_id": uid,
+            "has_passphrase": has_pp,
+            "attempt_input_len": len(body.passphrase or ""),
+            "attempt_norm_len": len(norm),
+            "attempt_norm": norm,
+            "verified": verified,
+            "contains_zero_width_input": contains_zero_width,
+        }
+    )
+    return result

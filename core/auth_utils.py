@@ -55,3 +55,12 @@ def verify_passphrase(stored_salt_hex: str, stored_hash_hex: str, attempt: str) 
         return hashlib.compare_digest(calc, expected)
     except Exception:
         return False
+
+
+def normalize_pass_for_debug(p: str) -> str:
+    """Expose normalized passphrase for admin-side debugging.
+
+    This mirrors the normalization applied during hashing/verifying but does not
+    perform any hashing. Intended for admin-only diagnostics.
+    """
+    return _normalize_passphrase(p)

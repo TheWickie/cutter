@@ -47,6 +47,7 @@
       <div style="display:flex; gap:8px; align-items:center;">
         <input id="pass" placeholder="it's a priest thing (optional)" />
         <button id="verifyBtn" type="button" title="Verify with user">Verify</button>
+        <button id="debugBtn" type="button" title="Debug normalization">Debug</button>
       </div>
     </div>
     <div class="row"><label></label><button id="saveBtn">Create / Update</button></div>
@@ -96,6 +97,7 @@
     document.getElementById('saveBtn').addEventListener('click', upsert);
     document.getElementById('healthBtn').addEventListener('click', refreshHealth);
     document.getElementById('verifyBtn').addEventListener('click', verifyPass);
+    document.getElementById('debugBtn').addEventListener('click', debugPass);
     document.getElementById('lookupBtn').addEventListener('click', lookupUser);
 
     async function refreshHealth() {
@@ -166,6 +168,25 @@
         if (data?.found && data?.name) $("name").value = data.name;
       } catch (e) {
         out.textContent = 'Error looking up user: ' + (e?.message || e);
+      }
+    }
+
+    async function debugPass() {
+      const base = (apiBaseEl.value || autoBase).replace(/\/$/, '');
+      let token = tokenEl.value.trim().replace(/^['"]|['"]$/g, '');
+      const display = $("display").value.trim() || $("name").value.trim();
+      const pass = $("pass").value;
+      if (!display || !pass) { out.textContent = 'Please fill Display Name (or Name) and Passphrase first.'; return; }
+      try {
+        const res = await fetch(base + '/v2/admin/debug-pass', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+          body: JSON.stringify({ display_name: display, passphrase: pass })
+        });
+        const data = await res.json();
+        out.textContent = 'Debug: ' + JSON.stringify(data, null, 2);
+      } catch (e) {
+        out.textContent = 'Error debugging: ' + (e?.message || e);
       }
     }
   </script>
