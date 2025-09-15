@@ -1,6 +1,7 @@
 import os
 import re
 import hashlib
+import hmac
 import unicodedata
 from typing import Tuple
 
@@ -48,11 +49,11 @@ def hash_passphrase(passphrase: str, salt: bytes | None = None) -> Tuple[str, st
 def verify_passphrase(stored_salt_hex: str, stored_hash_hex: str, attempt: str) -> bool:
     try:
         salt = bytes.fromhex(stored_salt_hex)
-        expected = bytes.fromhex(stored_hash_hex)
+        expected_hex = (stored_hash_hex or "").lower()
         norm = _normalize_passphrase(attempt)
-        calc = hashlib.scrypt(norm.encode("utf-8"), salt=salt, n=SCRYPT_N, r=SCRYPT_R, p=SCRYPT_P, dklen=SCRYPT_LEN)
-        # constant-time compare
-        return hashlib.compare_digest(calc, expected)
+        calc_hex = hashlib.scrypt(norm.encode("utf-8"), salt=salt, n=SCRYPT_N, r=SCRYPT_R, p=SCRYPT_P, dklen=SCRYPT_LEN).hex()
+        # constant-time compare on hex strings (same length)
+        return hmac.compare_digest(calc_hex, expected_hex)
     except Exception:
         return False
 

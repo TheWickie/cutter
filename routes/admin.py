@@ -173,10 +173,13 @@ def debug_pass(body: AdminVerifyPass, request: Request):
     attempt_hex = None
     try:
         import hashlib
-        calc = hashlib.scrypt(norm.encode("utf-8"), salt=bytes.fromhex(salt), n=16384, r=8, p=1, dklen=32)
+        sbytes = bytes.fromhex(salt)
+        calc = hashlib.scrypt(norm.encode("utf-8"), salt=sbytes, n=16384, r=8, p=1, dklen=32)
         attempt_hex = calc.hex()
+        salt_len = len(sbytes)
     except Exception:
         attempt_hex = None
+        salt_len = None
     contains_zero_width = any(ch in body.passphrase for ch in ["\u200B", "\u200C", "\u200D", "\uFEFF"])
     result.update(
         {
@@ -188,8 +191,14 @@ def debug_pass(body: AdminVerifyPass, request: Request):
             "verified": verified,
             "contains_zero_width_input": contains_zero_width,
             "server_store_scheme": get_client_scheme(),
+            "salt_len": salt_len,
+            "stored_hash_len": (len(bytes.fromhex(phash)) if phash else None),
+            "attempt_hash_len": (len(bytes.fromhex(attempt_hex)) if attempt_hex else None),
             "stored_hash_prefix": (phash[:8] if phash else None),
+            "stored_hash_suffix": (phash[-8:] if phash else None),
             "attempt_hash_prefix": (attempt_hex[:8] if attempt_hex else None),
+            "attempt_hash_suffix": (attempt_hex[-8:] if attempt_hex else None),
+            "hashes_equal": (attempt_hex == phash) if (attempt_hex and phash) else None,
         }
     )
     return result
