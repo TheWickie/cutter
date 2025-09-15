@@ -1,3 +1,4 @@
-id_code,name,number
-ALPHA1234,Alice A,+15551230001
-BETA-9999,Bob B,
+name,id_code,number,display_name,passphrase
+Alice A,ALPHA1234,+15551230001,Alice A,
+Bob B,BETA-9999,,Bob B,
+"Cris R",,,"Cris R","it's a priest thing"
