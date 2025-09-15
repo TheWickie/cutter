@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Cutter Admin</title>
+  <link rel="stylesheet" href="style.css" />
+  <style>
+    .admin-wrap { max-width: 760px; margin: 2rem auto; background: #0f1223; color: #e5e7eb; padding: 1rem 1.25rem; border-radius: 12px; border: 1px solid rgba(255,255,255,0.1);} 
+    .row { display: grid; grid-template-columns: 160px 1fr; gap: 10px; align-items: center; margin: 8px 0; }
+    input { padding: 8px 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.18); background: rgba(0,0,0,0.25); color: #f8fafc; }
+    button { padding: 8px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.18); background: linear-gradient(135deg,#10b98155,#22d3ee33); color: #e5f7ff; font-weight: 600; }
+    .note { font-size: .9rem; color: #cbd5e1; margin-top: 8px; }
+    .result { white-space: pre-wrap; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); border-radius: 8px; padding: 8px; margin-top: 10px; }
+  </style>
+</head>
+<body class="chat-body">
+  <div class="admin-wrap">
+    <h2>Admin – Upsert User</h2>
+    <div class="row"><label>API Base</label><input id="apiBase" value="" placeholder="auto (leave blank for default)" /></div>
+    <div class="row"><label>Admin Token</label><input id="token" placeholder="Paste ADMIN_TOKEN" /></div>
+    <div class="row"><label>Name</label><input id="name" placeholder="Full name e.g., Cris R" /></div>
+    <div class="row"><label>Display Name</label><input id="display" placeholder="e.g., Cris R" /></div>
+    <div class="row"><label>ID Code</label><input id="idcode" placeholder="ALPHA1234 (optional)" /></div>
+    <div class="row"><label>Number</label><input id="number" placeholder="+441234567890 (optional)" /></div>
+    <div class="row"><label>Passphrase</label><input id="pass" placeholder="it's a priest thing (optional)" /></div>
+    <div class="row"><label></label><button id="saveBtn">Create / Update</button></div>
+    <div class="note">This writes to Redis: user hash + reverse mappings (name_to_user, idcode_to_user, number_to_user). Requires ADMIN_TOKEN set on the backend.</div>
+    <div id="result" class="result"></div>
+  </div>
+
+  <script type="module">
+    const autoBase = window.location.hostname === 'localhost' ? 'http://localhost:8000' : 'https://cutter.onrender.com';
+    const apiBaseEl = document.getElementById('apiBase');
+    apiBaseEl.value = sessionStorage.getItem('admin_api_base') || '';
+    const tokenEl = document.getElementById('token');
+    tokenEl.value = sessionStorage.getItem('admin_token') || '';
+
+    const $ = (id) => document.getElementById(id);
+    const out = $("result");
+
+    async function upsert() {
+      const base = (apiBaseEl.value || autoBase).replace(/\/$/, '');
+      const token = tokenEl.value.trim();
+      sessionStorage.setItem('admin_api_base', apiBaseEl.value);
+      sessionStorage.setItem('admin_token', token);
+      const body = {
+        name: $("name").value.trim(),
+        display_name: $("display").value.trim() || null,
+        id_code: $("idcode").value.trim() || null,
+        number: $("number").value.trim() || null,
+        passphrase: $("pass").value,
+      };
+      try {
+        const res = await fetch(base + '/v2/admin/user', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+          body: JSON.stringify(body)
+        });
+        const data = await res.json();
+        out.textContent = JSON.stringify(data, null, 2);
+      } catch (e) {
+        out.textContent = 'Error: ' + (e?.message || e);
+      }
+    }
+
+    document.getElementById('saveBtn').addEventListener('click', upsert);
+  </script>
+</body>
+</html>
+
