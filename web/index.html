@@ -13,7 +13,11 @@
         <span class="logo">✂️</span>
         <h1>Cutter</h1>
       </div>
-      <div class="status-pill" id="status-pill">Connecting…</div>
+      <div style="display:flex; align-items:center; gap:12px;">
+        <div class="status-pill" id="status-pill">Connecting…</div>
+        <span id="status" class="status status-disconnected" aria-live="polite">Disconnected</span>
+        <button id="callButton" class="send-btn" title="Start/stop voice">Call</button>
+      </div>
     </header>
 
     <main class="chat-main">
@@ -133,7 +137,8 @@
       }
     });
 
-    document.addEventListener('DOMContentLoaded', init());
+    document.addEventListener('DOMContentLoaded', init);
   </script>
+  <script src="app.js"></script>
 </body>
 </html>

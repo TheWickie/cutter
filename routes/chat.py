@@ -41,7 +41,17 @@ async def send(body: ChatSend, request: Request):
         ]
         try:
             resp = client.chat.completions.create(model=OPENAI_CHAT_MODEL, messages=messages)
-            reply_text = resp.choices[0].message["content"]
+            choice = resp.choices[0]
+            # Support both dict-like and object-like message
+            msg = getattr(choice, "message", None)
+            content = None
+            if msg is not None:
+                content = getattr(msg, "content", None)
+                if content is None and isinstance(msg, dict):
+                    content = msg.get("content")
+            if not content:
+                content = ""
+            reply_text = str(content).strip() or "I’m here. How can I help?"
         except Exception:
             reply_text = "Sorry, I had trouble responding."  # graceful fallback
 

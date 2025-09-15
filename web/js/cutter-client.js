@@ -11,7 +11,7 @@ async function api(path, options) {
     headers: { "Content-Type": "application/json" },
     ...options,
   });
-  if (res.status === 401) throw new Error("session expired—start again");
+  if (res.status === 401) throw new Error("Session expired. Please start again.");
   return await res.json();
 }
 
@@ -34,3 +34,4 @@ export async function switchMode(session_id, mode) {
 export async function guestSession(name) {
   return api("/v2/auth/guest", { method: "POST", body: JSON.stringify({ name }) });
 }
+
