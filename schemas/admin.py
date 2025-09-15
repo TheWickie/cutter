@@ -13,3 +13,7 @@ class AdminUserUpsert(BaseModel):
 class AdminDisplayQuery(BaseModel):
     display_name: str
 
+
+class AdminVerifyPass(BaseModel):
+    display_name: str
+    passphrase: str

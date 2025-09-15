@@ -38,7 +38,12 @@
     <div class="row"><label>Display Name</label><input id="display" placeholder="e.g., Cris R" /></div>
     <div class="row"><label>ID Code</label><input id="idcode" placeholder="ALPHA1234 (optional)" /></div>
     <div class="row"><label>Number</label><input id="number" placeholder="+441234567890 (optional)" /></div>
-    <div class="row"><label>Passphrase</label><input id="pass" placeholder="it's a priest thing (optional)" /></div>
+    <div class="row"><label>Passphrase</label>
+      <div style="display:flex; gap:8px; align-items:center;">
+        <input id="pass" placeholder="it's a priest thing (optional)" />
+        <button id="verifyBtn" type="button" title="Verify with user">Verify</button>
+      </div>
+    </div>
     <div class="row"><label></label><button id="saveBtn">Create / Update</button></div>
     <div class="note">This writes to Redis: user hash + reverse mappings (name_to_user, idcode_to_user, number_to_user). Requires ADMIN_TOKEN set on the backend.</div>
     <div id="result" class="result"></div>
@@ -85,6 +90,7 @@
 
     document.getElementById('saveBtn').addEventListener('click', upsert);
     document.getElementById('healthBtn').addEventListener('click', refreshHealth);
+    document.getElementById('verifyBtn').addEventListener('click', verifyPass);
 
     async function refreshHealth() {
       const base = (apiBaseEl.value || autoBase).replace(/\/$/, '');
@@ -118,6 +124,28 @@
       tokenEl.type = tokenEl.type === 'password' ? 'text' : 'password';
       document.getElementById('toggleToken').textContent = tokenEl.type === 'password' ? 'Show' : 'Hide';
     });
+
+    async function verifyPass() {
+      const base = (apiBaseEl.value || autoBase).replace(/\/$/, '');
+      let token = tokenEl.value.trim().replace(/^['"]|['"]$/g, '');
+      const display = $("display").value.trim() || $("name").value.trim();
+      const pass = $("pass").value;
+      if (!display || !pass) {
+        out.textContent = 'Please fill Display Name (or Name) and Passphrase first.';
+        return;
+      }
+      try {
+        const res = await fetch(base + '/v2/admin/verify-pass', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+          body: JSON.stringify({ display_name: display, passphrase: pass })
+        });
+        const data = await res.json();
+        out.textContent = 'Verify result: ' + JSON.stringify(data, null, 2);
+      } catch (e) {
+        out.textContent = 'Error verifying: ' + (e?.message || e);
+      }
+    }
   </script>
 </body>
 </html>
