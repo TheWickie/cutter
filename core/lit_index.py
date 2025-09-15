@@ -76,7 +76,10 @@ def extract_pdf(path: str) -> List[Tuple[int, str]]:
     """Return list of (page_number starting at 1, text)."""
     from PyPDF2 import PdfReader  # lazy import
 
-    reader = PdfReader(path)
+    try:
+        reader = PdfReader(path)
+    except Exception as e:
+        raise ValueError(f"Failed to open PDF '{os.path.basename(path)}': {e}")
     pages: List[Tuple[int, str]] = []
     for i, page in enumerate(reader.pages, start=1):
         try:
@@ -110,13 +113,15 @@ def index_dir(content_dir: str = "content/na", overwrite: bool = False) -> Dict[
         if f.lower().endswith(".pdf")
     ]
     all_chunk_ids: List[str] = []
+    errors: List[Dict[str, Any]] = []
     for pdf in pdfs:
         try:
             with open(pdf, "rb") as fh:
                 data = fh.read()
             sha = hashlib.sha256(data).hexdigest()
-        except Exception:
+        except Exception as e:
             skipped += 1
+            errors.append({"file": os.path.basename(pdf), "error": f"read_failed: {e}"})
             continue
         title = os.path.splitext(os.path.basename(pdf))[0]
         abbrev = _abbrev_from_filename(pdf)
@@ -135,7 +140,12 @@ def index_dir(content_dir: str = "content/na", overwrite: bool = False) -> Dict[
             skipped += 1
             continue
 
-        pages = extract_pdf(pdf)
+        try:
+            pages = extract_pdf(pdf)
+        except Exception as e:
+            skipped += 1
+            errors.append({"file": os.path.basename(pdf), "error": str(e)})
+            continue
         chunks_payload: List[Dict[str, Any]] = []
         for page_num, page_txt in pages:
             if not page_txt.strip():
@@ -171,7 +181,7 @@ def index_dir(content_dir: str = "content/na", overwrite: bool = False) -> Dict[
             added += 1
 
     r.set("lit:index:all", json.dumps(all_chunk_ids))
-    return {"added": added, "updated": updated, "skipped": skipped, "total_chunks": len(all_chunk_ids)}
+    return {"added": added, "updated": updated, "skipped": skipped, "total_chunks": len(all_chunk_ids), "errors": errors}
 
 
 def list_docs() -> List[Dict[str, Any]]:
@@ -263,4 +273,3 @@ def build_context(snippets: List[Dict[str, Any]]) -> str:
         text = s.get("text", "")
         lines.append(f"[{abbrev} p.{page}] {text}")
     return "\n".join(lines)
-

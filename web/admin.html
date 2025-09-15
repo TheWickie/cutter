@@ -57,6 +57,12 @@
     <hr/>
     <h3>Literature Indexing</h3>
     <div class="row"><label>Content Dir</label><input id="litDir" placeholder="default: content/na" /></div>
+    <div class="row"><label>Upload PDF</label>
+      <div style="display:flex; gap:8px; align-items:center;">
+        <input id="litFile" type="file" accept="application/pdf" />
+        <button id="uploadBtn">Upload</button>
+      </div>
+    </div>
     <div class="row"><label></label><button id="reindexBtn">Reindex PDFs</button></div>
     <div class="row"><label>Search</label>
       <div style="display:flex; gap:8px; align-items:center;">
@@ -112,6 +118,7 @@
     document.getElementById('debugBtn').addEventListener('click', debugPass);
     document.getElementById('lookupBtn').addEventListener('click', lookupUser);
     document.getElementById('reindexBtn').addEventListener('click', reindexLit);
+    document.getElementById('uploadBtn').addEventListener('click', uploadLit);
     document.getElementById('litSearchBtn').addEventListener('click', searchLit);
 
     async function refreshHealth() {
@@ -226,6 +233,24 @@
         const res = await fetch(base + '/v2/lit/search?q=' + encodeURIComponent(q) + '&k=4');
         const data = await res.json();
         document.getElementById('litOut').textContent = 'Search: ' + JSON.stringify(data, null, 2);
+      } catch (e) {
+        document.getElementById('litOut').textContent = 'Error: ' + (e?.message || e);
+      }
+    }
+
+    async function uploadLit() {
+      const base = (apiBaseEl.value || autoBase).replace(/\/$/, '');
+      let token = tokenEl.value.trim().replace(/^['"]|['"]$/g, '');
+      const f = document.getElementById('litFile').files[0];
+      if (!f) { document.getElementById('litOut').textContent = 'Choose a PDF file first.'; return; }
+      const form = new FormData();
+      form.append('file', f);
+      try {
+        const res = await fetch(base + '/v2/admin/lit/upload?overwrite=true', {
+          method: 'POST', headers: { 'Authorization': 'Bearer ' + token }, body: form
+        });
+        const data = await res.json();
+        document.getElementById('litOut').textContent = 'Upload: ' + JSON.stringify(data, null, 2);
       } catch (e) {
         document.getElementById('litOut').textContent = 'Error: ' + (e?.message || e);
       }
