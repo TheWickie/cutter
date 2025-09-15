@@ -11,6 +11,13 @@ let callActive = false;  // flag indicating whether a call is in progress
 let clientSecret = null; // current client_secret token
 let modelName = null;    // realtime model name
 
+// Determine backend base URL. Use local server during development and
+// the Render deployment in production.
+const API_BASE =
+  window.location.hostname === "localhost"
+    ? "http://localhost:8000"
+    : "https://cutter.onrender.com";
+
 /**
  * Update the status indicator in the UI.
  * @param {string} state One of "connected", "connecting", or "disconnected".
@@ -44,7 +51,7 @@ async function startCall() {
   button.disabled = true;
   try {
     // Request a new client_secret and model name from our backend.
-    const response = await fetch("/session", { method: "POST" });
+    const response = await fetch(`${API_BASE}/session`, { method: "POST" });
     if (!response.ok) {
       throw new Error(`Server error: ${response.statusText}`);
     }
