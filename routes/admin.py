@@ -84,8 +84,9 @@ def upsert_user(body: AdminUserUpsert, request: Request):
         pp = body.passphrase.strip().strip('"').strip("'")
         salt_hex, hash_hex = hash_passphrase(pp)
         r.hset(f"user:{user_id}", mapping={"pass_salt": salt_hex, "pass_hash": hash_hex})
-
-    return {"user_id": user_id, "status": status}
+    user_after = r.hgetall(f"user:{user_id}")
+    has_pp = bool(user_after.get("pass_salt") and user_after.get("pass_hash"))
+    return {"user_id": user_id, "status": status, "has_passphrase": has_pp}
 
 
 @router.post("/verify-pass")

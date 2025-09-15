@@ -1,6 +1,7 @@
 import os
 import re
 import hashlib
+import unicodedata
 from typing import Tuple
 
 
@@ -26,8 +27,11 @@ SCRYPT_LEN = 32
 
 
 def _normalize_passphrase(p: str) -> str:
-    # Trim, collapse spaces, and normalise common curly quotes to ASCII
-    s = (p or "").strip()
+    # Unicode normalise, trim, collapse spaces, and normalise quotes/spaces
+    s = unicodedata.normalize("NFKC", (p or ""))
+    s = s.replace("\u00A0", " ")  # NBSP -> space
+    s = re.sub(r"[\u200B\u200C\u200D\uFEFF]", "", s)  # zero-width chars
+    s = s.strip()
     s = s.replace("\u2018", "'").replace("\u2019", "'")  # left/right single quote
     s = s.replace("\u201C", '"').replace("\u201D", '"')  # left/right double quote
     s = " ".join(s.split())
