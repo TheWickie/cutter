@@ -1,4 +1,5 @@
 import os
+import re
 import datetime as dt
 from fastapi import APIRouter, HTTPException, Request
 
@@ -7,10 +8,11 @@ try:
 except Exception:
     OpenAI = None
 
-from core.redis_store import get_json, set_json, hgetall, touch_last_seen
+from core.redis_store import get_json, set_json, hgetall, touch_last_seen, get_client
 from core.guardrails import build_system_prompt
 from core.rate_limit import rate_limit
 from schemas.chat import ChatSend
+from core.auth_utils import extract_claimed_name, verify_passphrase
 
 router = APIRouter(prefix="/v2/chat")
 
@@ -28,9 +30,52 @@ async def send(body: ChatSend, request: Request):
     if not session:
         raise HTTPException(status_code=401, detail={"error": {"code": "BAD_SESSION", "message": "Session not found"}})
     user_id = session["user_id"]
+    r = get_client()
+    state = session.get("state", {})
+    history = state.get("history", [])
+
+    # Lightweight identity handshake: detect name claim and ask for passphrase.
+    text = (body.message or "").strip()
+    ident = state.get("identity", {})
+    if ident.get("stage") == "await_pass":
+        cand_uid = ident.get("candidate_user_id")
+        user_hash = hgetall(f"user:{cand_uid}")
+        salt = user_hash.get("pass_salt", "")
+        phash = user_hash.get("pass_hash", "")
+        ok = bool(salt and phash and verify_passphrase(salt, phash, text))
+        if ok:
+            session["user_id"] = cand_uid
+            state.pop("identity", None)
+            session["state"] = {**state, "history": history[-50:]}
+            set_json(f"session:{body.session_id}", session, ttl=SESSION_TTL)
+            profile = hgetall(f"user:{cand_uid}")
+            name = profile.get("name", "there")
+            return {"reply": f"Thanks, {name}. I’ve opened your notes. How can I help today?", "memory_delta": {}}
+        else:
+            tries = int(ident.get("tries", 0)) + 1
+            if tries >= 3:
+                state.pop("identity", None)
+                session["state"] = {**state, "history": history[-50:]}
+                set_json(f"session:{body.session_id}", session, ttl=SESSION_TTL)
+                return {"reply": "That didn’t match. We can continue as guest for now.", "memory_delta": {}}
+            else:
+                state.setdefault("identity", {})
+                state["identity"]["tries"] = tries
+                session["state"] = {**state, "history": history[-50:]}
+                set_json(f"session:{body.session_id}", session, ttl=SESSION_TTL)
+                return {"reply": "That didn’t match. Try again, please.", "memory_delta": {}}
+
+    claimed = extract_claimed_name(text)
+    if claimed:
+        cand_uid = r.get(f"name_to_user:{claimed}")
+        if cand_uid:
+            state["identity"] = {"stage": "await_pass", "candidate_user_id": cand_uid, "tries": 0}
+            session["state"] = {**state, "history": history[-50:]}
+            set_json(f"session:{body.session_id}", session, ttl=SESSION_TTL)
+            return {"reply": "What’s your passphrase please?", "memory_delta": {}}
+
     profile = hgetall(f"user:{user_id}")
     memory = get_json(f"memory:{user_id}") or {}
-    history = session.get("state", {}).get("history", [])
 
     system_prompt = build_system_prompt(profile, memory)
 

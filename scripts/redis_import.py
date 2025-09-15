@@ -29,6 +29,7 @@ from typing import Dict, Iterable, Optional
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
 from core.redis_store import get_client  # type: ignore
+from core.auth_utils import normalize_name, hash_passphrase
 
 IDCODE_RE = re.compile(r"^[A-Za-z0-9-]{4,32}$")
 
@@ -41,11 +42,11 @@ def validate_row(row: Dict[str, str]) -> Optional[str]:
     name = (row.get("name") or "").strip()
     id_code_raw = (row.get("id_code") or "").strip()
     number = (row.get("number") or "").strip()
+    display_name = (row.get("display_name") or "").strip()
+    passphrase = (row.get("passphrase") or "").strip()
     if not name:
         return "missing name"
-    if not id_code_raw:
-        return "missing id_code"
-    if not IDCODE_RE.match(id_code_raw):
+    if id_code_raw and not IDCODE_RE.match(id_code_raw):
         return "invalid id_code format"
     if number and not re.match(r"^[0-9+]{6,20}$", number):
         return "invalid number format"
@@ -72,20 +73,27 @@ def upsert_user(row: Dict[str, str], overwrite: bool = False) -> str:
     r = get_client()
     now = dt.datetime.utcnow().isoformat()
 
-    id_code = normalize_idcode(row["id_code"])
+    id_code = normalize_idcode(row.get("id_code") or "") if row.get("id_code") else None
     name = row["name"].strip()
     number = (row.get("number") or "").strip() or None
+    display_name = (row.get("display_name") or "").strip() or None
+    passphrase = (row.get("passphrase") or "").strip() or None
 
-    existing_uid = r.get(f"idcode_to_user:{id_code}")
+    existing_uid = r.get(f"idcode_to_user:{id_code}") if id_code else None
+    if display_name and not existing_uid:
+        existing_uid = r.get(f"name_to_user:{normalize_name(display_name)}")
     if existing_uid and not overwrite:
         return existing_uid
 
     user_id = existing_uid or __import__("uuid").uuid4().hex
 
     # Reverse mappings
-    r.set(f"idcode_to_user:{id_code}", user_id)
+    if id_code:
+        r.set(f"idcode_to_user:{id_code}", user_id)
     if number:
         r.set(f"number_to_user:{number}", user_id)
+    if display_name:
+        r.set(f"name_to_user:{normalize_name(display_name)}", user_id)
 
     # User hash
     r.hset(
@@ -93,20 +101,23 @@ def upsert_user(row: Dict[str, str], overwrite: bool = False) -> str:
         mapping={
             "name": name,
             "number": number or "",
-            "id_code": id_code,
+            "id_code": id_code or "",
             "authed": "1",
             "created_at": now,
             "last_seen": now,
         },
     )
+    if passphrase:
+        salt_hex, hash_hex = hash_passphrase(passphrase)
+        r.hset(f"user:{user_id}", mapping={"pass_salt": salt_hex, "pass_hash": hash_hex})
     return user_id
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Import users with ID codes into Redis")
     g = parser.add_mutually_exclusive_group(required=True)
-    g.add_argument("--csv", dest="csv_path", help="CSV file with id_code,name,number")
-    g.add_argument("--jsonl", dest="jsonl_path", help="JSONL file with objects including id_code,name,number")
+    g.add_argument("--csv", dest="csv_path", help="CSV: name,id_code?,number?,display_name?,passphrase?")
+    g.add_argument("--jsonl", dest="jsonl_path", help="JSONL: objects with name and optional id_code,number,display_name,passphrase")
     parser.add_argument("--overwrite", action="store_true", help="Overwrite existing users for duplicate id_code")
 
     args = parser.parse_args()
