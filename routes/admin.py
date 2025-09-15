@@ -21,6 +21,21 @@ def _require_admin(request: Request) -> None:
         raise HTTPException(status_code=401, detail={"error": {"code": "UNAUTHORISED", "message": "Bad admin token"}})
 
 
+@router.get("/health")
+def health(request: Request):
+    """Admin health: verifies admin token and Redis connectivity."""
+    rate_limit(request)
+    _require_admin(request)
+    ok = False
+    try:
+        c = get_client()
+        c.ping()
+        ok = True
+    except Exception:
+        ok = False
+    return {"admin": "ok", "redis_ok": ok}
+
+
 @router.post("/user")
 def upsert_user(body: AdminUserUpsert, request: Request):
     rate_limit(request)
@@ -69,4 +84,3 @@ def upsert_user(body: AdminUserUpsert, request: Request):
         r.hset(f"user:{user_id}", mapping={"pass_salt": salt_hex, "pass_hash": hash_hex})
 
     return {"user_id": user_id, "status": status}
-

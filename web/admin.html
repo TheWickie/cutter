@@ -16,9 +16,18 @@
 </head>
 <body class="chat-body">
   <div class="admin-wrap">
-    <h2>Admin – Upsert User</h2>
+    <h2>Admin – Health & Upsert User</h2>
     <div class="row"><label>API Base</label><input id="apiBase" value="" placeholder="auto (leave blank for default)" /></div>
     <div class="row"><label>Admin Token</label><input id="token" placeholder="Paste ADMIN_TOKEN" /></div>
+
+    <h3>Health</h3>
+    <div class="row"><label>Service</label><div id="svcHealth">–</div></div>
+    <div class="row"><label>Redis</label><div id="redisHealth">–</div></div>
+    <div class="row"><label>Realtime</label><div id="rtHealth">–</div></div>
+    <div class="row"><label></label><button id="healthBtn">Refresh Health</button></div>
+
+    <hr/>
+    <h3>Upsert User</h3>
     <div class="row"><label>Name</label><input id="name" placeholder="Full name e.g., Cris R" /></div>
     <div class="row"><label>Display Name</label><input id="display" placeholder="e.g., Cris R" /></div>
     <div class="row"><label>ID Code</label><input id="idcode" placeholder="ALPHA1234 (optional)" /></div>
@@ -38,6 +47,9 @@
 
     const $ = (id) => document.getElementById(id);
     const out = $("result");
+    const svc = $("svcHealth");
+    const red = $("redisHealth");
+    const rt = $("rtHealth");
 
     async function upsert() {
       const base = (apiBaseEl.value || autoBase).replace(/\/$/, '');
@@ -65,7 +77,32 @@
     }
 
     document.getElementById('saveBtn').addEventListener('click', upsert);
+    document.getElementById('healthBtn').addEventListener('click', refreshHealth);
+
+    async function refreshHealth() {
+      const base = (apiBaseEl.value || autoBase).replace(/\/$/, '');
+      const token = tokenEl.value.trim();
+      try {
+        const r1 = await fetch(base + '/v2/health');
+        const h1 = await r1.json();
+        svc.textContent = h1.service + ' (' + (h1.model || 'n/a') + ')';
+        red.textContent = h1.redis_ok ? 'OK' : 'FAIL';
+        rt.textContent = h1.openai_realtime_ok ? 'OK' : 'Limited/Off';
+      } catch (e) {
+        svc.textContent = 'Error';
+      }
+      try {
+        const r2 = await fetch(base + '/v2/admin/health', { headers: { 'Authorization': 'Bearer ' + token }});
+        const h2 = await r2.json();
+        // If admin health fails auth, show brief message in result panel
+        if (!r2.ok) out.textContent = JSON.stringify(h2, null, 2);
+      } catch (e) {
+        // ignore
+      }
+    }
+
+    // Auto refresh on load
+    refreshHealth();
   </script>
 </body>
 </html>
-
