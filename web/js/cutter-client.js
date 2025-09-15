@@ -1,4 +1,10 @@
-const API_BASE = "";
+// Choose backend URL based on environment.
+// Defaults to local development server, but uses the Render deployment when
+// the frontend is hosted elsewhere.
+export const API_BASE =
+  window.location.hostname === "localhost"
+    ? "http://localhost:8000"
+    : "https://cutter.onrender.com";
 
 async function api(path, options) {
   const res = await fetch(API_BASE + path, {
