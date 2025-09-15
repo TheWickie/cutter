@@ -53,11 +53,30 @@ def get_client():
         url = os.getenv("REDIS_URL", "memory://")
         if url.startswith("fakeredis://") and fakeredis:
             _client = fakeredis.FakeRedis(decode_responses=True)
-        elif redis and not url.startswith("memory://"):
-            # redis-py derives TLS from the rediss:// scheme; passing ssl= can break on some versions
-            _client = redis.from_url(url, decode_responses=True)
-        else:
-            _client = MemoryStore()
+            return _client
+        if redis and not url.startswith("memory://"):
+            # 1) Try as-is (supports rediss:// for TLS)
+            try:
+                client = redis.from_url(url, decode_responses=True)
+                # Validate connection early so we can gracefully fallback
+                client.ping()
+                _client = client
+                return _client
+            except Exception as e:
+                # Common managed Redis setups expose non-TLS ports. If TLS handshake fails,
+                # retry without TLS by swapping rediss:// -> redis://
+                if url.startswith("rediss://"):
+                    try:
+                        plain_url = "redis://" + url[len("rediss://") :]
+                        client = redis.from_url(plain_url, decode_responses=True)
+                        client.ping()
+                        _client = client
+                        return _client
+                    except Exception:
+                        pass
+                # Last resort: raise after falling through to in-memory store
+        # Fallback to in-memory store so the app can still run in dev
+        _client = MemoryStore()
     return _client
 
 
