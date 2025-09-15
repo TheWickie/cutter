@@ -11,7 +11,7 @@ async function api(path, options) {
     headers: { "Content-Type": "application/json" },
     ...options,
   });
-  if (res.status === 401) throw new Error("unauthorised");
+  if (res.status === 401) throw new Error("session expired—start again");
   return await res.json();
 }
 
@@ -30,3 +30,4 @@ export async function sendMessage(session_id, message) {
 export async function switchMode(session_id, mode) {
   return api("/v2/session/mode", { method: "POST", body: JSON.stringify({ session_id, mode }) });
 }
+

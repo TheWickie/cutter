@@ -1,0 +1,41 @@
+<header>
+  <nav style="display:flex; justify-content:flex-end; gap:4px; align-items:center;">
+    <span id="health-pill" class="pill">Checking...</span>
+    <span id="health-refresh" style="cursor:pointer;">&#x21bb;</span>
+  </nav>
+</header>
+<style>
+  .pill { padding:2px 6px; border-radius:10px; font-size:0.8rem; color:#fff; }
+  .pill.green { background:#4caf50; }
+  .pill.amber { background:#ffc107; color:#000; }
+  .pill.red { background:#f44336; }
+</style>
+<script>
+const API_BASE = window.location.hostname === "localhost" ? "http://localhost:8000" : "https://cutter.onrender.com";
+async function updateHealth() {
+  const pill = document.getElementById("health-pill");
+  try {
+    const res = await fetch(API_BASE + "/v2/health");
+    if (!res.ok) throw new Error();
+    const data = await res.json();
+    if (data.redis_ok && data.openai_realtime_ok) {
+      pill.textContent = "Voice ready";
+      pill.className = "pill green";
+    } else if (data.redis_ok) {
+      pill.textContent = "Partial";
+      pill.className = "pill amber";
+    } else {
+      pill.textContent = "Offline";
+      pill.className = "pill red";
+    }
+  } catch (e) {
+    pill.textContent = "Backend offline";
+    pill.className = "pill red";
+  }
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  updateHealth();
+  document.getElementById("health-refresh").addEventListener("click", updateHealth);
+});
+</script>
