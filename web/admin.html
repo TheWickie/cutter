@@ -53,6 +53,18 @@
     <div class="row"><label></label><button id="saveBtn">Create / Update</button></div>
     <div class="note">This writes to Redis: user hash + reverse mappings (name_to_user, idcode_to_user, number_to_user). Requires ADMIN_TOKEN set on the backend.</div>
     <div id="result" class="result"></div>
+
+    <hr/>
+    <h3>Literature Indexing</h3>
+    <div class="row"><label>Content Dir</label><input id="litDir" placeholder="default: content/na" /></div>
+    <div class="row"><label></label><button id="reindexBtn">Reindex PDFs</button></div>
+    <div class="row"><label>Search</label>
+      <div style="display:flex; gap:8px; align-items:center;">
+        <input id="litQuery" placeholder="e.g., powerlessness step one"/>
+        <button id="litSearchBtn">Search</button>
+      </div>
+    </div>
+    <div id="litOut" class="result"></div>
   </div>
 
   <script type="module">
@@ -99,6 +111,8 @@
     document.getElementById('verifyBtn').addEventListener('click', verifyPass);
     document.getElementById('debugBtn').addEventListener('click', debugPass);
     document.getElementById('lookupBtn').addEventListener('click', lookupUser);
+    document.getElementById('reindexBtn').addEventListener('click', reindexLit);
+    document.getElementById('litSearchBtn').addEventListener('click', searchLit);
 
     async function refreshHealth() {
       const base = (apiBaseEl.value || autoBase).replace(/\/$/, '');
@@ -187,6 +201,33 @@
         out.textContent = 'Debug: ' + JSON.stringify(data, null, 2);
       } catch (e) {
         out.textContent = 'Error debugging: ' + (e?.message || e);
+      }
+    }
+
+    async function reindexLit() {
+      const base = (apiBaseEl.value || autoBase).replace(/\/$/, '');
+      let token = tokenEl.value.trim().replace(/^['"]|['"]$/g, '');
+      try {
+        const res = await fetch(base + '/v2/admin/lit/reindex?overwrite=true', {
+          method: 'POST', headers: { 'Authorization': 'Bearer ' + token }
+        });
+        const data = await res.json();
+        document.getElementById('litOut').textContent = 'Reindex: ' + JSON.stringify(data, null, 2);
+      } catch (e) {
+        document.getElementById('litOut').textContent = 'Error: ' + (e?.message || e);
+      }
+    }
+
+    async function searchLit() {
+      const base = (apiBaseEl.value || autoBase).replace(/\/$/, '');
+      const q = document.getElementById('litQuery').value.trim();
+      if (!q) return;
+      try {
+        const res = await fetch(base + '/v2/lit/search?q=' + encodeURIComponent(q) + '&k=4');
+        const data = await res.json();
+        document.getElementById('litOut').textContent = 'Search: ' + JSON.stringify(data, null, 2);
+      } catch (e) {
+        document.getElementById('litOut').textContent = 'Error: ' + (e?.message || e);
       }
     }
   </script>

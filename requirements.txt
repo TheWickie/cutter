@@ -8,3 +8,4 @@ loguru>=0.7
 openai>=1.42
 pydantic>=2.7
 pytest>=8.3
+PyPDF2>=3.0

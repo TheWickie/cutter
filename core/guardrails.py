@@ -20,6 +20,9 @@ def build_system_prompt(profile: Dict[str, Any], memory: Dict[str, Any]) -> str:
         "Default flow: acknowledge, reflect, ask one focused question, suggest one small next step. "
         "You may use simple Markdown for clarity: **bold**, *italics*, and links."
     )
+    parts.append(
+        "When giving stepwork or NA-specific guidance, use only the NA literature context provided to you and include citations like [SWG p.23] or [BT p.15]. If there is no relevant context, say you can’t cite a passage and stick to NA principles."
+    )
     if profile:
         name = profile.get("name", "Caller")
         parts.append(f"The caller is {name}.")

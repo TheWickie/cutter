@@ -10,6 +10,7 @@ except Exception:
 
 from core.redis_store import get_json, set_json, hgetall, touch_last_seen, get_client
 from core.guardrails import build_system_prompt
+from core.lit_index import search as lit_search, build_context as lit_context
 from core.rate_limit import rate_limit
 from schemas.chat import ChatSend
 from core.auth_utils import extract_claimed_name, verify_passphrase
@@ -77,7 +78,18 @@ async def send(body: ChatSend, request: Request):
     profile = hgetall(f"user:{user_id}")
     memory = get_json(f"memory:{user_id}") or {}
 
+    # Build system prompt and optional NA literature context for stepwork queries
     system_prompt = build_system_prompt(profile, memory)
+    lit_snippets = []
+    # Simple heuristic: if user mentions step or sponsor/literature terms, retrieve context
+    lower_msg = (body.message or "").lower()
+    if any(t in lower_msg for t in ["step ", "step", "sponsor", "literature", "na text", "basic text", "just for today", "swg", "step one", "step 1", "step two", "step 2", "powerless", "higher power", "inventory"]):
+        try:
+            lit_snippets = lit_search(body.message, k=3)
+        except Exception:
+            lit_snippets = []
+    if lit_snippets:
+        system_prompt = system_prompt + "\n\nContext:\n" + lit_context(lit_snippets)
 
     reply_text = "This is a test reply."  # fallback
     if client:

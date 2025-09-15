@@ -44,13 +44,14 @@ def create_app() -> FastAPI:
         load_policy()
 
     # Include routes
-    from routes import auth, chat, voice, memory, system, admin
+    from routes import auth, chat, voice, memory, system, admin, lit
     app.include_router(auth.router)
     app.include_router(chat.router)
     app.include_router(voice.router)
     app.include_router(memory.router)
     app.include_router(system.router)
     app.include_router(admin.router)
+    app.include_router(lit.router)
 
     logger.info("Cutter app ready. Allowed origins: %s", origins)
     return app
