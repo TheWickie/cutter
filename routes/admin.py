@@ -79,14 +79,24 @@ def upsert_user(body: AdminUserUpsert, request: Request):
         mapping["created_at"] = now
     r.hset(f"user:{user_id}", mapping=mapping)
 
+    verified = None
     if body.passphrase:
         # Strip accidental surrounding quotes and normalise inside hash_passphrase
         pp = body.passphrase.strip().strip('"').strip("'")
         salt_hex, hash_hex = hash_passphrase(pp)
         r.hset(f"user:{user_id}", mapping={"pass_salt": salt_hex, "pass_hash": hash_hex})
+        # Round-trip verify to confirm persistence
+        try:
+            user_after = r.hgetall(f"user:{user_id}")
+            verified = verify_passphrase(user_after.get("pass_salt", ""), user_after.get("pass_hash", ""), pp)
+        except Exception:
+            verified = False
     user_after = r.hgetall(f"user:{user_id}")
     has_pp = bool(user_after.get("pass_salt") and user_after.get("pass_hash"))
-    return {"user_id": user_id, "status": status, "has_passphrase": has_pp}
+    res = {"user_id": user_id, "status": status, "has_passphrase": has_pp}
+    if verified is not None:
+        res["verified_after_set"] = bool(verified)
+    return res
 
 
 @router.post("/verify-pass")
