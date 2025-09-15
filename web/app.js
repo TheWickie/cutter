@@ -10,6 +10,12 @@ let remoteAudio = null;  // element playing the assistant's audio
 let callActive = false;  // flag indicating whether a call is in progress
 let clientSecret = null; // current client_secret token
 let modelName = null;    // realtime model name
+let keepalive = null;    // RTCDataChannel for keepalive pings
+let keepaliveTimer = null; // interval handle
+let inactivityTimer = null; // interval handle
+let lastActivity = Date.now();
+let micAnalyser = null; // WebAudio analyser for mic activity
+let inactivityWarned = false;
 
 // Determine backend base URL. Use local server during development and
 // the Render deployment in production.
@@ -71,7 +77,10 @@ async function startCall() {
     modelName = data.model;
 
     // Create a new RTCPeerConnection and set up handlers.
-    pc = new RTCPeerConnection();
+    pc = new RTCPeerConnection({
+      iceServers: [{ urls: ["stun:stun.l.google.com:19302"] }],
+      iceCandidatePoolSize: 4,
+    });
     remoteAudio = new Audio();
     remoteAudio.autoplay = true;
     remoteAudio.playsInline = true;
@@ -80,6 +89,7 @@ async function startCall() {
       if (remoteAudio.srcObject !== ev.streams[0]) {
         remoteAudio.srcObject = ev.streams[0];
       }
+      lastActivity = Date.now();
     };
 
     // Obtain microphone input from the user.
@@ -87,6 +97,16 @@ async function startCall() {
     localStream.getTracks().forEach((track) => {
       pc.addTrack(track, localStream);
     });
+    // Set up a WebAudio analyser to detect mic activity
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const source = ctx.createMediaStreamSource(localStream);
+      micAnalyser = ctx.createAnalyser();
+      micAnalyser.fftSize = 256;
+      source.connect(micAnalyser);
+    } catch (_) {
+      micAnalyser = null;
+    }
 
     // Create an SDP offer and set it as the local description.
     const offer = await pc.createOffer();
@@ -116,6 +136,37 @@ async function startCall() {
       type: "answer",
       sdp: answerSdp
     }));
+
+    // Keepalive datachannel and inactivity watcher
+    keepalive = pc.createDataChannel("keepalive");
+    keepalive.onopen = () => {
+      if (keepaliveTimer) clearInterval(keepaliveTimer);
+      keepaliveTimer = setInterval(() => {
+        if (keepalive && keepalive.readyState === "open") {
+          keepalive.send("ping:" + Date.now());
+        }
+      }, 10000);
+    };
+
+    if (inactivityTimer) clearInterval(inactivityTimer);
+    inactivityWarned = false;
+    lastActivity = Date.now();
+    inactivityTimer = setInterval(() => {
+      if (micAnalyser) {
+        const buf = new Uint8Array(micAnalyser.frequencyBinCount);
+        micAnalyser.getByteTimeDomainData(buf);
+        const variance = buf.reduce((acc, v) => acc + Math.abs(v - 128), 0) / buf.length;
+        if (variance > 2) lastActivity = Date.now();
+      }
+      const idle = Date.now() - lastActivity;
+      if (idle > 30000 && !inactivityWarned) {
+        inactivityWarned = true;
+        showError("Inactivity", "No one is speaking. Hanging up in ~10s unless you speak.");
+      }
+      if (idle > 40000) {
+        endCall();
+      }
+    }, 5000);
 
     // Update UI to reflect an active call.
     callActive = true;
@@ -152,6 +203,8 @@ function endCall() {
   callActive = false;
   clientSecret = null;
   modelName = null;
+  if (keepaliveTimer) { clearInterval(keepaliveTimer); keepaliveTimer = null; }
+  if (inactivityTimer) { clearInterval(inactivityTimer); inactivityTimer = null; }
   updateStatus("disconnected");
   const button = document.getElementById("callButton");
   button.textContent = "Call the helper";
