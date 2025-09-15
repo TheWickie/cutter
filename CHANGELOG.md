@@ -1,5 +1,6 @@
 ## Unreleased
 - Restore `/session` endpoint providing OpenAI realtime client tokens for the web frontend.
+- Fixed backend returning object for `client_secret`; now extracts token value so frontend sends valid Authorization header.
 
 ## 2025-09-15 — Voice handshake fix + health check
 - Fixed Realtime session creation: added required `OpenAI-Beta: realtime=v1` header.

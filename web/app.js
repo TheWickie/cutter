@@ -64,7 +64,10 @@ async function startCall() {
       throw new Error(`Server error: ${response.statusText}`);
     }
     const data = await response.json();
-    clientSecret = data.client_secret;
+    clientSecret =
+      typeof data.client_secret === "object"
+        ? data.client_secret.value
+        : data.client_secret;
     modelName = data.model;
 
     // Create a new RTCPeerConnection and set up handlers.
