@@ -31,3 +31,6 @@ export async function switchMode(session_id, mode) {
   return api("/v2/session/mode", { method: "POST", body: JSON.stringify({ session_id, mode }) });
 }
 
+export async function guestSession(name) {
+  return api("/v2/auth/guest", { method: "POST", body: JSON.stringify({ name }) });
+}

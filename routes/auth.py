@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException, Request
 
 from core.redis_store import get_client, hgetall, hset, set_json
 from core.rate_limit import rate_limit
-from schemas.auth import CallRequest, VerifyNameRequest, ModeRequest
+from schemas.auth import CallRequest, VerifyNameRequest, ModeRequest, GuestRequest
 
 router = APIRouter(prefix="/v2")
 
@@ -68,3 +68,31 @@ def session_mode(body: ModeRequest, request: Request):
     session_obj["mode"] = body.mode
     set_json(f"session:{body.session_id}", session_obj, ttl=SESSION_TTL)
     return {"session_id": body.session_id, "mode": body.mode}
+
+
+@router.post("/auth/guest")
+def guest(body: GuestRequest, request: Request):
+    rate_limit(request)
+    r = get_client()
+    now = dt.datetime.utcnow().isoformat()
+    user_id = uuid.uuid4().hex
+    name = (body.name or "Guest").strip() or "Guest"
+    hset(
+        f"user:{user_id}",
+        {
+            "name": name,
+            "authed": "1",
+            "created_at": now,
+            "last_seen": now,
+        },
+    )
+    session_id = uuid.uuid4().hex
+    session = {
+        "user_id": user_id,
+        "mode": "text",
+        "created_at": now,
+        "expires_at": (dt.datetime.utcnow() + dt.timedelta(seconds=SESSION_TTL)).isoformat(),
+        "state": {"history": []},
+    }
+    set_json(f"session:{session_id}", session, ttl=SESSION_TTL)
+    return {"user_id": user_id, "session_id": session_id, "mode": "text"}

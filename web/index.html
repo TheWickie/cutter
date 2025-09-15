@@ -2,79 +2,138 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Cutter API Demo</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Cutter Chat</title>
   <link rel="stylesheet" href="style.css" />
 </head>
-<body>
-  <header>
-    <h1>Cutter API Demo</h1>
-    <p class="privacy">
-      Demonstration page for the Cutter backend. Conversations are not stored
-      and this helper does not replace emergency services.
-    </p>
-  </header>
+<body class="chat-body">
+  <div class="chat-container">
+    <header class="chat-header">
+      <div class="brand">
+        <span class="logo">✂️</span>
+        <h1>Cutter</h1>
+      </div>
+      <div class="status-pill" id="status-pill">Connecting…</div>
+    </header>
 
-  <main>
-    <section id="auth">
-      <input id="number" placeholder="Phone number" />
-      <input id="name" placeholder="Name" />
-      <button id="authBtn">Begin Session</button>
-    </section>
+    <main class="chat-main">
+      <div id="chat-log" class="chat-log" aria-live="polite"></div>
+      <div id="thinking" class="thinking hidden">Assistant is thinking…</div>
+    </main>
 
-    <section id="chat" hidden>
-      <div id="log" class="transcript" aria-live="polite"></div>
-      <input id="message" placeholder="Type a message" />
-      <button id="sendBtn">Send</button>
-    </section>
-  </main>
-
-  <footer>
-    <p class="disclaimer">
-      This assistant is an interim support tool for NA members and does not
-      replace human sponsors or emergency services.
-    </p>
-  </footer>
+    <footer class="chat-input">
+      <textarea id="message" rows="1" placeholder="Type your message…"></textarea>
+      <button id="sendBtn" class="send-btn">Send</button>
+    </footer>
+  </div>
 
   <script type="module">
-    import { startCall, verifyName, sendMessage } from "./js/cutter-client.js";
+    import { guestSession, sendMessage, API_BASE } from './js/cutter-client.js';
+
+    const pill = document.getElementById('status-pill');
+    const log = document.getElementById('chat-log');
+    const thinking = document.getElementById('thinking');
+    const input = document.getElementById('message');
+    const sendBtn = document.getElementById('sendBtn');
 
     let sessionId = null;
 
-    const authBtn = document.getElementById("authBtn");
-    const sendBtn = document.getElementById("sendBtn");
-    const log = document.getElementById("log");
+    function escapeHtml(s){
+      return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[c]));
+    }
+    function renderMarkdown(s){
+      let html = escapeHtml(s);
+      html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+      html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+      html = html.replace(/(https?:\/\/[^\s)]+)(\))/g, '$1$2');
+      html = html.replace(/(https?:\/\/[^\s]+)/g, '<a href="$1" target="_blank" rel="noopener">$1</a>');
+      return html;
+    }
 
-    authBtn.addEventListener("click", async () => {
-      const number = document.getElementById("number").value;
-      const name = document.getElementById("name").value;
-      try {
-        const call = await startCall(number);
-        if (call.need_name_registration || call.need_name_verification) {
-          const verify = await verifyName(number, name);
-          sessionId = verify.session_id;
+    function addBubble(text, role){
+      const div = document.createElement('div');
+      div.className = 'bubble ' + (role === 'user' ? 'user' : 'assistant');
+      div.innerHTML = renderMarkdown(text);
+      log.appendChild(div);
+      log.scrollTop = log.scrollHeight;
+      return div;
+    }
+
+    async function typeReply(text){
+      const div = document.createElement('div');
+      div.className = 'bubble assistant typing';
+      div.textContent = '';
+      log.appendChild(div);
+      log.scrollTop = log.scrollHeight;
+      await new Promise(r => setTimeout(r, 400));
+      for (let i=1;i<=text.length;i++){
+        div.textContent = text.slice(0,i);
+        if (i % 3 === 0) await new Promise(r => setTimeout(r, 15));
+        log.scrollTop = log.scrollHeight;
+      }
+      // finalize with rendered markdown
+      div.classList.remove('typing');
+      div.innerHTML = renderMarkdown(text);
+      log.scrollTop = log.scrollHeight;
+    }
+
+    async function updateHealth(){
+      try{
+        const res = await fetch(API_BASE + '/v2/health');
+        const data = await res.json();
+        if (data.redis_ok) {
+          pill.textContent = data.openai_realtime_ok ? 'Online' : 'Limited';
+          pill.className = 'status-pill ' + (data.openai_realtime_ok ? 'ok' : 'warn');
         } else {
-          sessionId = call.session_id;
+          pill.textContent = 'Offline';
+          pill.className = 'status-pill err';
         }
-        document.getElementById("auth").hidden = true;
-        document.getElementById("chat").hidden = false;
-      } catch (err) {
-        alert("Error: " + err.message);
+      }catch{
+        pill.textContent = 'Offline';
+        pill.className = 'status-pill err';
+      }
+    }
+
+    async function init(){
+      updateHealth();
+      try{
+        const name = localStorage.getItem('cutter_name') || '';
+        const resp = await guestSession(name || undefined);
+        sessionId = resp.session_id;
+        pill.textContent = 'Ready';
+        pill.className = 'status-pill ok';
+        if (!name){ addBubble('Welcome. You can tell me your name any time.', 'assistant'); }
+      }catch(e){
+        pill.textContent = 'Auth failed';
+        pill.className = 'status-pill err';
+      }
+    }
+
+    sendBtn.addEventListener('click', async () => {
+      const message = input.value.trim();
+      if (!message || !sessionId) return;
+      addBubble(message, 'user');
+      input.value = '';
+      thinking.classList.remove('hidden');
+      try{
+        const res = await sendMessage(sessionId, message);
+        thinking.classList.add('hidden');
+        await new Promise(r => setTimeout(r, 300));
+        await typeReply(res.reply || '…');
+      }catch(e){
+        thinking.classList.add('hidden');
+        addBubble('Sorry, there was an error sending your message.', 'assistant');
       }
     });
 
-    sendBtn.addEventListener("click", async () => {
-      const message = document.getElementById("message").value;
-      if (!message) return;
-      try {
-        const res = await sendMessage(sessionId, message);
-        log.innerHTML += `<div class="user">${message}</div>`;
-        log.innerHTML += `<div class="assistant">${res.reply}</div>`;
-        document.getElementById("message").value = "";
-      } catch (err) {
-        alert("Error: " + err.message);
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey){
+        e.preventDefault();
+        sendBtn.click();
       }
     });
+
+    document.addEventListener('DOMContentLoaded', init());
   </script>
 </body>
 </html>

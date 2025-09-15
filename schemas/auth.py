@@ -13,3 +13,7 @@ class VerifyNameRequest(BaseModel):
 class ModeRequest(BaseModel):
     session_id: str
     mode: str
+
+
+class GuestRequest(BaseModel):
+    name: str | None = None
