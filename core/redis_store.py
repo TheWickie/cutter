@@ -8,6 +8,11 @@ try:
 except Exception:  # library may be missing in test env
     redis = None
 
+try:  # used in tests
+    import fakeredis  # type: ignore
+except Exception:
+    fakeredis = None
+
 _client: Any = None
 
 
@@ -46,7 +51,9 @@ def get_client():
     global _client
     if _client is None:
         url = os.getenv("REDIS_URL", "memory://")
-        if redis and not url.startswith("memory://"):
+        if url.startswith("fakeredis://") and fakeredis:
+            _client = fakeredis.FakeRedis(decode_responses=True)
+        elif redis and not url.startswith("memory://"):
             ssl = url.startswith("rediss://")
             _client = redis.from_url(url, decode_responses=True, ssl=ssl)
         else:

@@ -1,44 +1,80 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Cutter Voice Pilot</title>
-  <link rel="stylesheet" href="style.css">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cutter API Demo</title>
+  <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <header>
-    <h1>Cutter Voice Pilot</h1>
+    <h1>Cutter API Demo</h1>
     <p class="privacy">
-      This experimental service respects your anonymity and does not record or
-      store your conversations.  It is a digital helper and does not replace
-      a sponsor or emergency services.
+      Demonstration page for the Cutter backend. Conversations are not stored
+      and this helper does not replace emergency services.
     </p>
   </header>
 
   <main>
-    <section id="call-section" class="call-section">
-      <button id="callButton" class="call-button">Call the helper</button>
-      <div id="status" class="status status-disconnected">Disconnected</div>
-      <div id="transcript" class="transcript" aria-live="polite"></div>
+    <section id="auth">
+      <input id="number" placeholder="Phone number" />
+      <input id="name" placeholder="Name" />
+      <button id="authBtn">Begin Session</button>
     </section>
 
-    <section class="crisis-info">
-      <p>If you are in immediate danger or feel at risk, please hang up and
-         call <strong>999</strong> or <strong>Samaritans 116&nbsp;123</strong>.
-         Under‑18s can call <strong>Childline 0800&nbsp;1111</strong>.</p>
+    <section id="chat" hidden>
+      <div id="log" class="transcript" aria-live="polite"></div>
+      <input id="message" placeholder="Type a message" />
+      <button id="sendBtn">Send</button>
     </section>
   </main>
 
   <footer>
     <p class="disclaimer">
-      This digital helper is an interim support tool for NA members.  It is
-      not affiliated with nor does it replace your NA sponsor, therapist or any
-      emergency service.  Please connect with your local NA fellowship for
-      ongoing support.
+      This assistant is an interim support tool for NA members and does not
+      replace human sponsors or emergency services.
     </p>
   </footer>
 
-  <script src="app.js"></script>
+  <script type="module">
+    import { startCall, verifyName, sendMessage } from "./js/cutter-client.js";
+
+    let sessionId = null;
+
+    const authBtn = document.getElementById("authBtn");
+    const sendBtn = document.getElementById("sendBtn");
+    const log = document.getElementById("log");
+
+    authBtn.addEventListener("click", async () => {
+      const number = document.getElementById("number").value;
+      const name = document.getElementById("name").value;
+      try {
+        const call = await startCall(number);
+        if (call.need_name_registration || call.need_name_verification) {
+          const verify = await verifyName(number, name);
+          sessionId = verify.session_id;
+        } else {
+          sessionId = call.session_id;
+        }
+        document.getElementById("auth").hidden = true;
+        document.getElementById("chat").hidden = false;
+      } catch (err) {
+        alert("Error: " + err.message);
+      }
+    });
+
+    sendBtn.addEventListener("click", async () => {
+      const message = document.getElementById("message").value;
+      if (!message) return;
+      try {
+        const res = await sendMessage(sessionId, message);
+        log.innerHTML += `<div class="user">${message}</div>`;
+        log.innerHTML += `<div class="assistant">${res.reply}</div>`;
+        document.getElementById("message").value = "";
+      } catch (err) {
+        alert("Error: " + err.message);
+      }
+    });
+  </script>
 </body>
 </html>
