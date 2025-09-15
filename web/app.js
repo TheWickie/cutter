@@ -18,6 +18,14 @@ const API_BASE =
     ? "http://localhost:8000"
     : "https://cutter.onrender.com";
 
+function showError(title, details) {
+  const div = document.createElement("div");
+  div.className = "alert";
+  div.innerHTML = `<strong>${title}</strong><pre>${details}</pre>`;
+  div.addEventListener("click", () => div.remove());
+  document.body.appendChild(div);
+}
+
 /**
  * Update the status indicator in the UI.
  * @param {string} state One of "connected", "connecting", or "disconnected".
@@ -84,18 +92,19 @@ async function startCall() {
     // Send the SDP offer to OpenAI's realtime endpoint.  Note that we use
     // the client_secret returned by our backend as the bearer token.  The
     // body of this request is the SDP itself (not JSON).
-    const sdpResponse = await fetch(`https://api.openai.com/v1/realtime?model=${encodeURIComponent(modelName)}`,
-      {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${clientSecret}`,
-          "Content-Type": "application/sdp"
-        },
-        body: offer.sdp
-      }
-    );
+    const sdpResponse = await fetch(`https://api.openai.com/v1/realtime?model=${encodeURIComponent(modelName)}`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${clientSecret}`,
+        "Content-Type": "application/sdp",
+        "OpenAI-Beta": "realtime=v1"
+      },
+      body: offer.sdp
+    });
     if (!sdpResponse.ok) {
-      throw new Error(`Realtime negotiation failed: ${await sdpResponse.text()}`);
+      const body = await sdpResponse.text();
+      showError(`Realtime negotiation failed (${sdpResponse.status}).`, body);
+      throw new Error(`Realtime negotiation failed: ${body}`);
     }
 
     // The response body contains the answer SDP.  Apply it to complete the handshake.
@@ -111,7 +120,7 @@ async function startCall() {
     button.textContent = "Hang up";
   } catch (err) {
     console.error(err);
-    alert("Error starting call: " + err.message);
+    showError("Error starting call", err.message);
     // Ensure we clean up if something goes wrong.
     endCall();
   } finally {
