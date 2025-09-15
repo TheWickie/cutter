@@ -80,7 +80,9 @@ def upsert_user(body: AdminUserUpsert, request: Request):
     r.hset(f"user:{user_id}", mapping=mapping)
 
     if body.passphrase:
-        salt_hex, hash_hex = hash_passphrase(body.passphrase)
+        # Strip accidental surrounding quotes and normalise inside hash_passphrase
+        pp = body.passphrase.strip().strip('"').strip("'")
+        salt_hex, hash_hex = hash_passphrase(pp)
         r.hset(f"user:{user_id}", mapping={"pass_salt": salt_hex, "pass_hash": hash_hex})
 
     return {"user_id": user_id, "status": status}
