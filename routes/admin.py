@@ -103,4 +103,4 @@ def verify_pass(body: AdminVerifyPass, request: Request):
     if not salt or not phash:
         return {"ok": False, "reason": "NO_PASSPHRASE", "user_id": uid}
     ok = verify_passphrase(salt, phash, body.passphrase)
-    return {"ok": bool(ok), "user_id": uid}
+    return {"ok": bool(ok), "user_id": uid, **({"reason": "MISMATCH"} if not ok else {})}
