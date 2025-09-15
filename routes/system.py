@@ -101,8 +101,11 @@ def create_realtime_session(request: Request):
                 detail={"error": {"code": "SESSION_CREATE_FAILED", "message": resp.text}},
             )
         data = resp.json()
+        client_secret = data.get("client_secret")
+        if isinstance(client_secret, dict):
+            client_secret = client_secret.get("value")
         return {
-            "client_secret": data.get("client_secret"),
+            "client_secret": client_secret,
             "model": data.get("model", OPENAI_REALTIME_MODEL),
         }
     except HTTPException:
