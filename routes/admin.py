@@ -104,3 +104,24 @@ def verify_pass(body: AdminVerifyPass, request: Request):
         return {"ok": False, "reason": "NO_PASSPHRASE", "user_id": uid}
     ok = verify_passphrase(salt, phash, body.passphrase)
     return {"ok": bool(ok), "user_id": uid, **({"reason": "MISMATCH"} if not ok else {})}
+
+
+@router.get("/user-by-display")
+def user_by_display(display_name: str, request: Request):
+    rate_limit(request)
+    _require_admin(request)
+    r = get_client()
+    dn = normalize_name(display_name)
+    uid = r.get(f"name_to_user:{dn}")
+    if not uid:
+        return {"found": False}
+    user = r.hgetall(f"user:{uid}")
+    has_pp = bool(user.get("pass_salt") and user.get("pass_hash"))
+    safe = {
+        "user_id": uid,
+        "name": user.get("name"),
+        "number": user.get("number"),
+        "id_code": user.get("id_code"),
+        "has_passphrase": has_pp,
+    }
+    return {"found": True, **safe}
