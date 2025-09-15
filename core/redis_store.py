@@ -54,8 +54,8 @@ def get_client():
         if url.startswith("fakeredis://") and fakeredis:
             _client = fakeredis.FakeRedis(decode_responses=True)
         elif redis and not url.startswith("memory://"):
-            ssl = url.startswith("rediss://")
-            _client = redis.from_url(url, decode_responses=True, ssl=ssl)
+            # redis-py derives TLS from the rediss:// scheme; passing ssl= can break on some versions
+            _client = redis.from_url(url, decode_responses=True)
         else:
             _client = MemoryStore()
     return _client
