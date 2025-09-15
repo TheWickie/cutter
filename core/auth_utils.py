@@ -31,7 +31,7 @@ def _normalize_passphrase(p: str) -> str:
     s = s.replace("\u2018", "'").replace("\u2019", "'")  # left/right single quote
     s = s.replace("\u201C", '"').replace("\u201D", '"')  # left/right double quote
     s = " ".join(s.split())
-    return s
+    return s.lower()
 
 
 def hash_passphrase(passphrase: str, salt: bytes | None = None) -> Tuple[str, str]:
