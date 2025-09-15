@@ -18,7 +18,12 @@
   <div class="admin-wrap">
     <h2>Admin – Health & Upsert User</h2>
     <div class="row"><label>API Base</label><input id="apiBase" value="" placeholder="auto (leave blank for default)" /></div>
-    <div class="row"><label>Admin Token</label><input id="token" placeholder="Paste ADMIN_TOKEN" /></div>
+    <div class="row"><label>Admin Token</label>
+      <div style="display:flex; gap:8px; align-items:center;">
+        <input id="token" type="password" placeholder="Paste ADMIN_TOKEN" />
+        <button id="toggleToken" type="button" title="Show/Hide">Show</button>
+      </div>
+    </div>
 
     <h3>Health</h3>
     <div class="row"><label>Service</label><div id="svcHealth">–</div></div>
@@ -55,7 +60,7 @@
 
     async function upsert() {
       const base = (apiBaseEl.value || autoBase).replace(/\/$/, '');
-      const token = tokenEl.value.trim();
+      let token = tokenEl.value.trim().replace(/^['"]|['"]$/g, '');
       sessionStorage.setItem('admin_api_base', apiBaseEl.value);
       sessionStorage.setItem('admin_token', token);
       const body = {
@@ -95,6 +100,7 @@
         svc.textContent = 'Error';
       }
       try {
+        let token = tokenEl.value.trim().replace(/^['"]|['"]$/g, '');
         const r2 = await fetch(base + '/v2/admin/health', { headers: { 'Authorization': 'Bearer ' + token }});
         const h2 = await r2.json();
         // If admin health fails auth, show brief message in result panel
@@ -106,6 +112,12 @@
 
     // Auto refresh on load
     refreshHealth();
+
+    // Toggle token visibility
+    document.getElementById('toggleToken').addEventListener('click', () => {
+      tokenEl.type = tokenEl.type === 'password' ? 'text' : 'password';
+      document.getElementById('toggleToken').textContent = tokenEl.type === 'password' ? 'Show' : 'Hide';
+    });
   </script>
 </body>
 </html>
