@@ -14,6 +14,7 @@ except Exception:
     fakeredis = None
 
 _client: Any = None
+_client_scheme: str = "unknown"  # one of: rediss, redis, fakeredis, memory, unknown
 
 
 class MemoryStore:
@@ -49,10 +50,12 @@ class MemoryStore:
 
 def get_client():
     global _client
+    global _client_scheme
     if _client is None:
         url = os.getenv("REDIS_URL", "memory://")
         if url.startswith("fakeredis://") and fakeredis:
             _client = fakeredis.FakeRedis(decode_responses=True)
+            _client_scheme = "fakeredis"
             return _client
         if redis and not url.startswith("memory://"):
             # 1) Try as-is (supports rediss:// for TLS)
@@ -61,6 +64,7 @@ def get_client():
                 # Validate connection early so we can gracefully fallback
                 client.ping()
                 _client = client
+                _client_scheme = "rediss" if url.startswith("rediss://") else "redis"
                 return _client
             except Exception as e:
                 # Common managed Redis setups expose non-TLS ports. If TLS handshake fails,
@@ -71,12 +75,14 @@ def get_client():
                         client = redis.from_url(plain_url, decode_responses=True)
                         client.ping()
                         _client = client
+                        _client_scheme = "redis"
                         return _client
                     except Exception:
                         pass
                 # Last resort: raise after falling through to in-memory store
         # Fallback to in-memory store so the app can still run in dev
         _client = MemoryStore()
+        _client_scheme = "memory"
     return _client
 
 
@@ -106,3 +112,17 @@ def touch_last_seen(user_id: str) -> None:
 
 def ensure_indexes() -> None:
     return
+
+
+def get_client_scheme() -> str:
+    """Returns the scheme for the active Redis client: rediss, redis, fakeredis, or memory.
+
+    Ensures the client is initialized before reporting.
+    """
+    global _client_scheme
+    if _client is None:
+        try:
+            get_client()
+        except Exception:
+            pass
+    return _client_scheme

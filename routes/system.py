@@ -2,7 +2,7 @@ import os
 import httpx
 from fastapi import APIRouter, HTTPException, Request
 
-from core.redis_store import get_client
+from core.redis_store import get_client, get_client_scheme
 from core.rate_limit import rate_limit
 from core.guardrails import get_excerpt
 
@@ -66,6 +66,7 @@ def health(request: Request):
     return {
         "service": "cutter",
         "redis_ok": redis_ok,
+        "redis_scheme": get_client_scheme(),
         "openai_realtime_ok": openai_ok,
         "model": OPENAI_REALTIME_MODEL,
         "voice": OPENAI_REALTIME_VOICE,

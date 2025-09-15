@@ -23,6 +23,7 @@
     <h3>Health</h3>
     <div class="row"><label>Service</label><div id="svcHealth">–</div></div>
     <div class="row"><label>Redis</label><div id="redisHealth">–</div></div>
+    <div class="row"><label>Redis Scheme</label><div id="redisScheme">–</div></div>
     <div class="row"><label>Realtime</label><div id="rtHealth">–</div></div>
     <div class="row"><label></label><button id="healthBtn">Refresh Health</button></div>
 
@@ -50,6 +51,7 @@
     const svc = $("svcHealth");
     const red = $("redisHealth");
     const rt = $("rtHealth");
+    const scheme = $("redisScheme");
 
     async function upsert() {
       const base = (apiBaseEl.value || autoBase).replace(/\/$/, '');
@@ -87,6 +89,7 @@
         const h1 = await r1.json();
         svc.textContent = h1.service + ' (' + (h1.model || 'n/a') + ')';
         red.textContent = h1.redis_ok ? 'OK' : 'FAIL';
+        scheme.textContent = h1.redis_scheme || 'unknown';
         rt.textContent = h1.openai_realtime_ok ? 'OK' : 'Limited/Off';
       } catch (e) {
         svc.textContent = 'Error';
