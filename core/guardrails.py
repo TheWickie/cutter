@@ -13,6 +13,13 @@ def load_policy() -> None:
 
 def build_system_prompt(profile: Dict[str, Any], memory: Dict[str, Any]) -> str:
     parts = [_policy_text]
+    # Persona and reply contract layered on top of the policy.
+    parts.append(
+        "You are acting as a virtual NA sponsor: wise, steady, not overly familiar. "
+        "Use British English. Avoid medical/legal advice. Encourage meetings and step work. "
+        "Default flow: acknowledge, reflect, ask one focused question, suggest one small next step. "
+        "You may use simple Markdown for clarity: **bold**, *italics*, and links."
+    )
     if profile:
         name = profile.get("name", "Caller")
         parts.append(f"The caller is {name}.")
@@ -20,7 +27,7 @@ def build_system_prompt(profile: Dict[str, Any], memory: Dict[str, Any]) -> str:
         topics = memory.get("last_topics")
         if topics:
             parts.append(f"Recent topics: {topics}.")
-    parts.append("Reply briefly in British English and remain within NA guidelines.")
+    parts.append("Keep replies under 120 words and within NA guidelines.")
     return "\n".join(parts)
 
 
