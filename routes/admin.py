@@ -5,7 +5,13 @@ from fastapi import APIRouter, HTTPException, Request
 
 from core.redis_store import get_client
 from core.rate_limit import rate_limit
-from core.auth_utils import normalize_name, hash_passphrase, verify_passphrase, normalize_pass_for_debug
+from core.auth_utils import (
+    normalize_name,
+    hash_passphrase,
+    verify_passphrase,
+    normalize_pass_for_debug,
+)
+from core.redis_store import get_client_scheme
 from schemas.admin import AdminUserUpsert, AdminVerifyPass
 
 router = APIRouter(prefix="/v2/admin")
@@ -163,6 +169,14 @@ def debug_pass(body: AdminVerifyPass, request: Request):
     has_pp = bool(salt and phash)
     norm = normalize_pass_for_debug(body.passphrase)
     verified = bool(has_pp and verify_passphrase(salt, phash, body.passphrase))
+    # Compute attempt hash with stored salt for prefix comparison (admin only)
+    attempt_hex = None
+    try:
+        import hashlib
+        calc = hashlib.scrypt(norm.encode("utf-8"), salt=bytes.fromhex(salt), n=16384, r=8, p=1, dklen=32)
+        attempt_hex = calc.hex()
+    except Exception:
+        attempt_hex = None
     contains_zero_width = any(ch in body.passphrase for ch in ["\u200B", "\u200C", "\u200D", "\uFEFF"])
     result.update(
         {
@@ -173,6 +187,9 @@ def debug_pass(body: AdminVerifyPass, request: Request):
             "attempt_norm": norm,
             "verified": verified,
             "contains_zero_width_input": contains_zero_width,
+            "server_store_scheme": get_client_scheme(),
+            "stored_hash_prefix": (phash[:8] if phash else None),
+            "attempt_hash_prefix": (attempt_hex[:8] if attempt_hex else None),
         }
     )
     return result
