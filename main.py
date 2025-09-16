@@ -45,7 +45,7 @@ def create_app() -> FastAPI:
         load_policy()
 
     # Include routes
-    from routes import auth, chat, voice, memory, system, admin, lit, av
+    from routes import auth, chat, voice, memory, system, admin, lit, av, audio_files
     app.include_router(auth.router)
     app.include_router(chat.router)
     app.include_router(voice.router)
@@ -54,10 +54,15 @@ def create_app() -> FastAPI:
     app.include_router(admin.router)
     app.include_router(lit.router)
     app.include_router(av.router)
+    app.include_router(audio_files.router)
 
     # Serve static admin pages from /admin (e.g., /admin/redisadmin.html)
     if os.path.isdir("web"):
         app.mount("/admin", StaticFiles(directory="web", html=True), name="admin-static")
+    # Serve audio files from /audio
+    audio_dir = os.getenv("AUDIO_DIR", "content/audio")
+    os.makedirs(audio_dir, exist_ok=True)
+    app.mount("/audio", StaticFiles(directory=audio_dir, html=False), name="audio-static")
 
     logger.info("Cutter app ready. Allowed origins: %s", origins)
     return app

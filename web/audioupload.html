@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Audio Upload</title>
+  <link rel="stylesheet" href="style.css" />
+  <style>
+    body { background:#0b0e1a; color:#e5e7eb; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell; }
+    .wrap { max-width: 900px; margin: 2rem auto; padding: 1rem; background:#0f1223; border-radius:12px; border:1px solid rgba(255,255,255,0.08); }
+    .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin: 10px 0; }
+    label { min-width: 140px; color:#cbd5e1; }
+    input, button { padding: 8px 10px; border-radius:8px; border:1px solid rgba(255,255,255,0.15); background: rgba(255,255,255,0.06); color:#e5e7eb; }
+    button { background: linear-gradient(135deg,#10b98155,#22d3ee33); font-weight:600; }
+    .files { border:1px solid rgba(255,255,255,0.12); border-radius:8px; padding:8px; max-height: 380px; overflow:auto; }
+    .file { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:6px 4px; border-bottom:1px dashed rgba(255,255,255,0.08); }
+    .note { color:#9ca3af; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h2>Audio Upload</h2>
+    <div class="row">
+      <label>API Base</label>
+      <input id="apiBase" placeholder="auto (leave blank)" style="min-width: 320px"/>
+      <label>Admin Token</label>
+      <input id="token" type="password" placeholder="ADMIN_TOKEN" style="min-width: 260px"/>
+      <button id="toggleToken" type="button">Show</button>
+    </div>
+    <div class="row">
+      <label>Upload</label>
+      <input id="file" type="file" accept="audio/*" />
+      <button id="uploadBtn">Upload</button>
+      <span id="status" class="note"></span>
+    </div>
+    <div class="row"><label>Files</label><button id="refreshBtn">Refresh</button></div>
+    <div id="files" class="files"></div>
+    <div class="note" style="margin-top:8px;">Uploaded files will be available at <code>/audio/&lt;filename&gt;</code>. Use these URLs in the player or share links.</div>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    function save(k,v){ sessionStorage.setItem(k,v); }
+    function load(k,d=''){ return sessionStorage.getItem(k) || d; }
+    function base(){ const auto = location.origin; const v = ($("apiBase").value || auto).replace(/\/$/,''); save('au_api_base', $("apiBase").value); return v; }
+    function token(){ const t = $("token").value.trim().replace(/^['"]|['"]$/g,''); save('au_token', t); return t; }
+    async function list(){ const r = await fetch(base()+"/v2/audio/list"); return r.json(); }
+    async function upload(){
+      const f = $("file").files[0]; if(!f){ $("status").textContent='Pick a file first'; return; }
+      $("status").textContent = 'Uploading...';
+      const form = new FormData(); form.append('file', f);
+      const r = await fetch(base()+"/v2/admin/audio/upload?overwrite=true", { method:'POST', headers:{ 'Authorization':'Bearer '+token() }, body: form });
+      const j = await r.json();
+      $("status").textContent = (j.status||'') + ' ' + (j.url||'');
+      await refresh();
+    }
+    async function refresh(){
+      try{
+        const data = await list();
+        const box = $("files"); box.innerHTML='';
+        (data.files||[]).forEach(f => {
+          const row = document.createElement('div'); row.className = 'file';
+          const name = document.createElement('div'); name.textContent = `${f.name} (${(f.bytes/1024/1024).toFixed(2)} MB)`;
+          const actions = document.createElement('div');
+          const a = document.createElement('a'); a.href = f.url; a.textContent = 'Open'; a.target = '_blank'; a.style.marginRight = '8px';
+          const copy = document.createElement('button'); copy.textContent='Copy Link'; copy.onclick = ()=>{ navigator.clipboard.writeText(new URL(f.url, location.origin)).then(()=>$("status").textContent='Copied link'); };
+          actions.appendChild(a); actions.appendChild(copy);
+          row.appendChild(name); row.appendChild(actions);
+          box.appendChild(row);
+        });
+      }catch(e){ $("files").innerHTML = '<div class="note">Error: '+(e?.message||e)+'</div>'; }
+    }
+    $("uploadBtn").addEventListener('click', upload);
+    $("refreshBtn").addEventListener('click', refresh);
+    $("toggleToken").addEventListener('click', () => {
+      const t = $("token"); t.type = t.type === 'password' ? 'text' : 'password';
+      $("toggleToken").textContent = t.type === 'password' ? 'Show' : 'Hide';
+    });
+    $("apiBase").value = load('au_api_base'); $("token").value = load('au_token');
+    refresh();
+  </script>
+</body>
+</html>
+
