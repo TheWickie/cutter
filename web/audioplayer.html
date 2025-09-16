@@ -257,19 +257,30 @@
 
     // File listing: try to parse directory index
     async function scanAudio(){
-      const base = $("audioBase").value.trim() || '/audio/';
-      save('av_audio_base', base);
+      const audioBase = $("audioBase").value.trim() || '/audio/';
+      save('av_audio_base', audioBase);
       $("files").innerHTML = '<div class="note">Scanning...</div>';
+      // 1) Prefer backend API list (works with FastAPI StaticFiles which has no index listing)
+      try {
+        const api = baseUrl();
+        const res = await fetch(api + '/v2/audio/list');
+        if (res.ok) {
+          const data = await res.json();
+          const urls = (data.files || []).map(f => new URL(f.url, api).toString());
+          if (urls.length) { renderFiles(urls); return; }
+        }
+      } catch (_) { /* fall through */ }
+      // 2) Fallback: try to parse directory index HTML at the provided audioBase
       try{
-        const res = await fetch(base, { mode:'cors' });
+        const res = await fetch(audioBase, { mode:'cors' });
         const html = await res.text();
         const div = document.createElement('div'); div.innerHTML = html;
         const links = Array.from(div.querySelectorAll('a'))
           .map(a=>a.getAttribute('href'))
           .filter(h => h && h.toLowerCase().endsWith('.mp3'));
-        renderFiles(links.map(h => new URL(h, base).toString()));
+        renderFiles(links.map(h => new URL(h, audioBase).toString()));
       }catch(e){
-        $("files").innerHTML = '<div class="note">Could not scan folder. Add a full URL below and click Load, or use the file picker.</div>';
+        $("files").innerHTML = '<div class="note">No MP3s found. Use the Upload tool or paste a full URL then click Load.</div>';
       }
     }
 
