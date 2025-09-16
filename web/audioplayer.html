@@ -20,7 +20,7 @@
     .file { padding:6px 8px; border-bottom:1px dashed rgba(255,255,255,0.08); cursor:pointer; }
     .file:hover { background: rgba(255,255,255,0.06); }
     .overlay { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; pointer-events:none; }
-    .overlay-text { font-size: 28px; text-align:center; font-weight: 700; color: #fdfdfd; text-shadow: 0 2px 10px rgba(0,0,0,0.7); padding: 0 1rem; }
+    .overlay-text { font-size: 28px; text-align:center; font-weight: 700; color: #fdfdfd; text-shadow: 0 2px 10px rgba(0,0,0,0.7); padding: 0 1rem; transition: opacity .6s ease; opacity: 0; }
     .badge { display:inline-block; padding:2px 6px; border-radius:6px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); font-size:12px; color:#cbd5e1; }
     .note { color:#9ca3af; font-size: 13px; }
   </style>
@@ -57,6 +57,17 @@
           <input id="fileInput" type="file" accept="audio/mpeg"/>
           <span class="badge" id="modeBadge">bars</span>
           <button id="modeBtn">Change Visual</button>
+        </div>
+        <div class="row">
+          <label>Captions</label>
+          <input id="capCount" value="24" style="max-width:120px" title="Number of overlays"/>
+          <input id="capKw" placeholder="keywords (optional)" class="left"/>
+          <button id="capBtn">Generate Captions</button>
+          <button id="testCapBtn" title="Show a sample overlay now">Show Example</button>
+        </div>
+        <div class="row">
+          <label>Status</label>
+          <div id="capStatus" class="note">No captions yet</div>
         </div>
       </div>
       <div class="side">
@@ -191,10 +202,30 @@
       try{
         const duration = Math.max(5, Math.floor(audio.duration || 0));
         if (!duration) return;
-        const res = await apiPost('/v2/av/captions', { title, duration_seconds: duration, count: 12 });
+        const count = Math.max(6, Math.min(48, parseInt($("capCount").value||'24',10)));
+        const kw = $("capKw").value.trim();
+        const body = { title, duration_seconds: duration, count };
+        if (kw) body.keywords = kw.split(',').map(s=>s.trim()).filter(Boolean);
+        $("capStatus").textContent = 'Generating captions...';
+        const res = await apiPost('/v2/av/captions', body);
         overlays = (res && res.overlays) ? res.overlays : [];
         overlayIdx = -1; lastShown = '';
-      } catch(e){ overlays = []; }
+        // Shift first overlay earlier if it starts too late (> 12s)
+        if (overlays.length){
+          const first = Number(overlays[0].t || 0);
+          if (first > 12){
+            const shift = first - 8; // aim first around 8s
+            overlays = overlays.map(o => ({ t: Math.max(1, Math.min(duration-1, Number(o.t||0) - shift)), text: String(o.text||'').slice(0,80) }));
+          }
+        }
+        $("capStatus").textContent = `Captions loaded: ${overlays.length}${res && res.cached ? ' (cached)' : ''}`;
+      } catch(e){ overlays = []; $("capStatus").textContent = 'Caption error: '+(e?.message||e); }
+    }
+
+    function showExampleOverlay(){
+      const msg = overlays && overlays.length ? overlays[0].text : 'Captions ready';
+      overlayEl.textContent = msg; overlayEl.style.opacity = '1';
+      setTimeout(() => { if (overlayEl.textContent === msg) overlayEl.style.opacity = '0'; }, 2000);
     }
 
     // File listing: try to parse directory index
@@ -231,6 +262,8 @@
     function titleFromUrl(u){ try{ const n = decodeURIComponent(u.split('/').pop()||'Track'); return n.replace(/\.[^/.]+$/, ''); } catch(_){ return 'Track'; } }
     async function loadUrl(){
       const url = $("audioUrl").value.trim(); if (!url) return;
+      // Enable cross-origin analysis when audio is hosted elsewhere
+      audio.crossOrigin = 'anonymous';
       audio.src = url; audio.play().catch(()=>{});
       ensureAudioNodes(); cancelAnimationFrame(rafId); draw();
       await new Promise(r => { if (audio.readyState>=1) r(0); else audio.addEventListener('loadedmetadata', () => r(0), { once:true }); });
@@ -256,6 +289,11 @@
       const t = $("token"); t.type = t.type === 'password' ? 'text' : 'password';
       $("toggleToken").textContent = t.type === 'password' ? 'Show' : 'Hide';
     });
+    $("capBtn").addEventListener('click', async ()=>{
+      const url = $("audioUrl").value.trim(); if (!url) { $("capStatus").textContent='Load an audio URL first'; return; }
+      await fetchOverlaysFor(titleFromUrl(url));
+    });
+    $("testCapBtn").addEventListener('click', showExampleOverlay);
 
     // Init persisted settings
     $("apiBase").value = load('av_api_base');
