@@ -349,12 +349,15 @@
       const ov = q.get('ov');
       const cyc = q.get('cycle') === '1';
       if (kiosk){
-        // Hide config rows and side list
-        document.querySelectorAll('.row').forEach((r, idx) => {
-          if (idx < 3 || r.textContent.includes('URL') || r.textContent.includes('Tracks') || r.textContent.includes('Captions') || r.textContent.includes('Status')){
-            r.classList.add('hidden');
-          }
-        });
+        // Hide config rows and sidebar, but KEEP the audio controls row visible
+        const hideRow = (el) => { const r = el && el.closest('.row'); if (r) r.classList.add('hidden'); };
+        hideRow(document.getElementById('apiBase'));
+        hideRow(document.getElementById('token'));
+        hideRow(document.getElementById('audioBase'));
+        hideRow(document.getElementById('audioUrl'));
+        hideRow(document.getElementById('capCount'));
+        hideRow(document.getElementById('capStatus'));
+        const side = document.querySelector('.side'); if (side) side.classList.add('hidden');
       }
       if (ov){
         try{
