@@ -23,6 +23,9 @@
     .overlay-text { font-size: 28px; text-align:center; font-weight: 700; color: #fdfdfd; text-shadow: 0 2px 10px rgba(0,0,0,0.7); padding: 0 1rem; transition: opacity .6s ease; opacity: 0; }
     .badge { display:inline-block; padding:2px 6px; border-radius:6px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); font-size:12px; color:#cbd5e1; }
     .note { color:#9ca3af; font-size: 13px; }
+    /* Kiosk/fullscreen adjustments */
+    .hidden { display:none !important; }
+    .vhfill { height: calc(100dvh - 180px); }
   </style>
 </head>
 <body>
@@ -44,11 +47,11 @@
     <div class="grid">
       <div class="left">
         <div style="position:relative">
-          <canvas id="viz"></canvas>
+          <canvas id="viz" class="vhfill"></canvas>
           <div class="overlay"><div id="overlayText" class="overlay-text"></div></div>
         </div>
         <div class="row">
-          <audio id="player" controls style="width:100%"></audio>
+          <audio id="player" controls controlslist="nodownload noplaybackrate noremoteplayback" style="width:100%"></audio>
         </div>
         <div class="row">
           <label>URL</label>
@@ -57,6 +60,7 @@
           <input id="fileInput" type="file" accept="audio/mpeg"/>
           <span class="badge" id="modeBadge">bars</span>
           <button id="modeBtn">Change Visual</button>
+          <button id="shareBtn" title="Copy a kiosk link with embedded captions">Copy Share Link</button>
         </div>
         <div class="row">
           <label>Captions</label>
@@ -98,6 +102,14 @@
     const audio = $("player");
     let audioCtx, analyser, srcNode, dataArray, timeArray, rafId;
     let mode = 'bars'; // bars | wave | radial | dots
+    let cycleTimer = null;
+    const palettes = [
+      (i,v)=>`hsl(${180+ i*0.6},70%,${35+v*35}%)`,
+      (i,v)=>`hsl(${(i*2+220)%360},80%,${30+v*50}%)`,
+      (i,v)=>`hsl(${(i*3+120)%360},85%,${40+v*40}%)`,
+      (i,v)=>`hsl(${(i*5+20)%360},75%,${45+v*35}%)`,
+    ];
+    let paletteIdx = 0;
     function resize(){
       const dpr = window.devicePixelRatio || 1;
       const rect = canvas.getBoundingClientRect();
@@ -143,12 +155,12 @@
           const bw = w / bars;
           const bh = (h-30) * Math.pow(v, 1.4);
           const x = i*bw; const y = h - bh;
-          ctx.fillStyle = `hsl(${180+ i*0.6},70%,${35+v*35}%)`;
+          ctx.fillStyle = palettes[paletteIdx % palettes.length](i, v);
           ctx.fillRect(x+1,y,bw-2,bh);
         }
       } else if (mode === 'wave'){
         analyser.getByteTimeDomainData(timeArray);
-        ctx.lineWidth = 2; ctx.strokeStyle = '#7dd3fc';
+        ctx.lineWidth = 2; ctx.strokeStyle = ['#7dd3fc','#86efac','#fca5a5','#fcd34d'][paletteIdx % 4];
         ctx.beginPath();
         const N = timeArray.length;
         for (let i=0;i<N;i++){
@@ -166,7 +178,7 @@
           const v = dataArray[i*step]/255; const a = (i/N)*Math.PI*2;
           const r = R + v*R*0.9;
           const x = cx + Math.cos(a)*r; const y = cy + Math.sin(a)*r;
-          ctx.strokeStyle = `hsla(${200+i},80%,60%,0.8)`; ctx.lineWidth = 2;
+          ctx.strokeStyle = `hsla(${(paletteIdx*60 + i*2)%360},80%,60%,0.8)`; ctx.lineWidth = 2;
           ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(x,y); ctx.stroke();
         }
       } else if (mode === 'dots'){
@@ -175,7 +187,7 @@
         for (let i=0;i<N;i++){
           const v = dataArray[i*step]/255;
           const x = (i+0.5)*(w/N); const y = h/2 + (Math.sin(i*0.3 + performance.now()*0.002))*h*0.25;
-          const r = 2 + v*10; ctx.fillStyle = `hsla(${160+i*2},85%,65%,0.9)`;
+          const r = 2 + v*10; ctx.fillStyle = `hsla(${(paletteIdx*80 + i*3)%360},85%,65%,0.9)`;
           ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill();
         }
       }
@@ -226,6 +238,21 @@
       const msg = overlays && overlays.length ? overlays[0].text : 'Captions ready';
       overlayEl.textContent = msg; overlayEl.style.opacity = '1';
       setTimeout(() => { if (overlayEl.textContent === msg) overlayEl.style.opacity = '0'; }, 2000);
+    }
+
+    // Share link (embeds overlays so recipients need no token)
+    function base64url(bytes){
+      return btoa(bytes).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+    }
+    function encodeOverlays(){
+      try { return base64url(unescape(encodeURIComponent(JSON.stringify(overlays||[])))); } catch(e){ return ''; }
+    }
+    function buildKioskLink(){
+      const url = $("audioUrl").value.trim(); if (!url){ alert('Load an audio URL first'); return; }
+      const ov = encodeOverlays();
+      const params = new URLSearchParams({ url, mode:'kiosk', cycle:'1', ov });
+      const link = `${location.origin}${location.pathname}?${params.toString()}`;
+      navigator.clipboard.writeText(link).then(()=>{ $("capStatus").textContent = 'Copied kiosk link to clipboard'; }).catch(()=>{ alert(link); });
     }
 
     // File listing: try to parse directory index
@@ -294,6 +321,7 @@
       await fetchOverlaysFor(titleFromUrl(url));
     });
     $("testCapBtn").addEventListener('click', showExampleOverlay);
+    $("shareBtn").addEventListener('click', buildKioskLink);
 
     // Init persisted settings
     $("apiBase").value = load('av_api_base');
@@ -301,6 +329,46 @@
     $("audioBase").value = load('av_audio_base','/audio/');
     // Optional auto-scan
     // scanAudio();
+
+    // Query params for kiosk mode
+    (function initFromQuery(){
+      const q = new URLSearchParams(location.search);
+      const kiosk = q.get('mode') === 'kiosk';
+      const url = q.get('url');
+      const ov = q.get('ov');
+      const cyc = q.get('cycle') === '1';
+      if (kiosk){
+        // Hide config rows and side list
+        document.querySelectorAll('.row').forEach((r, idx) => {
+          if (idx < 3 || r.textContent.includes('URL') || r.textContent.includes('Tracks') || r.textContent.includes('Captions') || r.textContent.includes('Status')){
+            r.classList.add('hidden');
+          }
+        });
+      }
+      if (ov){
+        try{
+          const json = decodeURIComponent(escape(atob(ov.replace(/-/g,'+').replace(/_/g,'/'))));
+          overlays = JSON.parse(json); overlayIdx = -1;
+        }catch(e){ overlays = []; }
+      }
+      if (url){
+        $("audioUrl").value = url; loadUrl().then(()=>{ if (!ov){ fetchOverlaysFor(titleFromUrl(url)); } });
+      }
+      // Cycle visuals randomly in kiosk or when cycle=1
+      if (kiosk || cyc){
+        const modes = ['bars','wave','radial','dots'];
+        function cycle(){
+          paletteIdx = (paletteIdx + 1) % palettes.length;
+          mode = modes[Math.floor(Math.random()*modes.length)];
+          $("modeBadge").textContent = mode;
+        }
+        cycleTimer = setInterval(cycle, 25000);
+        // Request fullscreen on first play (user gesture required on mobile)
+        audio.addEventListener('play', async ()=>{
+          try{ const el = document.documentElement; if (el.requestFullscreen) await el.requestFullscreen(); }catch(_){ }
+        }, { once:true });
+      }
+    })();
   </script>
 </body>
 </html>
