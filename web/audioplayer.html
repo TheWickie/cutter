@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Audio Player + Visualiser</title>
+  <link rel="stylesheet" href="style.css" />
+  <style>
+    body { background:#0b0e1a; color:#e5e7eb; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell; }
+    .wrap { max-width: 1000px; margin: 2rem auto; padding: 1rem; }
+    .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin: 8px 0; }
+    label { min-width: 140px; color:#cbd5e1; }
+    input, select, button { padding: 8px 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.15); background: rgba(255,255,255,0.05); color:#e5e7eb; }
+    button { background: linear-gradient(135deg,#10b98155,#22d3ee33); font-weight:600; }
+    .left { flex: 1 1 auto; }
+    .grid { display:grid; grid-template-columns: 1fr 300px; gap: 10px; }
+    canvas { width:100%; height:420px; background: radial-gradient(1200px 300px at 50% 10%, #19213a, #0b0e1a); border-radius: 12px; border:1px solid rgba(255,255,255,0.08); }
+    .side { display:flex; flex-direction:column; gap:8px; }
+    .files { max-height: 360px; overflow:auto; border:1px solid rgba(255,255,255,0.12); border-radius:8px; padding:6px; }
+    .file { padding:6px 8px; border-bottom:1px dashed rgba(255,255,255,0.08); cursor:pointer; }
+    .file:hover { background: rgba(255,255,255,0.06); }
+    .overlay { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; pointer-events:none; }
+    .overlay-text { font-size: 28px; text-align:center; font-weight: 700; color: #fdfdfd; text-shadow: 0 2px 10px rgba(0,0,0,0.7); padding: 0 1rem; }
+    .badge { display:inline-block; padding:2px 6px; border-radius:6px; background:#0f172a; border:1px solid rgba(255,255,255,0.15); font-size:12px; color:#cbd5e1; }
+    .note { color:#9ca3af; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h2>Audio Player + Visualiser</h2>
+    <div class="row">
+      <label>API Base</label>
+      <input id="apiBase" placeholder="auto (leave blank)" style="min-width: 320px"/>
+      <label>Admin Token</label>
+      <input id="token" type="password" placeholder="ADMIN_TOKEN" style="min-width: 280px"/>
+      <button id="toggleToken" type="button">Show</button>
+    </div>
+    <div class="row">
+      <label>Audio Base</label>
+      <input id="audioBase" value="/audio/" style="min-width:320px"/>
+      <button id="scanBtn">Scan MP3s</button>
+      <span class="note">Looks for mp3 links in the folder listing (Apache/NGINX autoindex). You can also add a full URL manually.</span>
+    </div>
+    <div class="grid">
+      <div class="left">
+        <div style="position:relative">
+          <canvas id="viz"></canvas>
+          <div class="overlay"><div id="overlayText" class="overlay-text"></div></div>
+        </div>
+        <div class="row">
+          <audio id="player" controls style="width:100%"></audio>
+        </div>
+        <div class="row">
+          <label>URL</label>
+          <input id="audioUrl" class="left" placeholder="https://example.com/audio/track.mp3"/>
+          <button id="loadBtn">Load</button>
+          <input id="fileInput" type="file" accept="audio/mpeg"/>
+          <span class="badge" id="modeBadge">bars</span>
+          <button id="modeBtn">Change Visual</button>
+        </div>
+      </div>
+      <div class="side">
+        <div class="row"><strong>Tracks</strong></div>
+        <div id="files" class="files"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Basic helpers
+    const $ = (id) => document.getElementById(id);
+    function save(k, v){ sessionStorage.setItem(k, v); }
+    function load(k, d=''){ return sessionStorage.getItem(k) || d; }
+    function baseUrl(){
+      const autoBase = location.hostname === 'localhost' ? 'http://localhost:8000' : location.origin;
+      const v = ($("apiBase").value || autoBase).replace(/\/$/, '');
+      save('av_api_base', $("apiBase").value); return v;
+    }
+    function token(){ const t = $("token").value.trim().replace(/^['"]|['"]$/g,''); save('av_token', t); return t; }
+    function api(path){ return fetch(baseUrl()+path, { headers: { 'Authorization': 'Bearer '+token() }}).then(r=>r.json()); }
+    function apiPost(path, body){ return fetch(baseUrl()+path, { method:'POST', headers:{ 'Authorization':'Bearer '+token(), 'Content-Type':'application/json' }, body: JSON.stringify(body||{}) }).then(r=>r.json()); }
+
+    // Visualiser setup
+    const canvas = $("viz");
+    const ctx = canvas.getContext('2d');
+    const overlayEl = $("overlayText");
+    const audio = $("player");
+    let audioCtx, analyser, srcNode, dataArray, timeArray, rafId;
+    let mode = 'bars'; // bars | wave | radial | dots
+    function resize(){
+      const dpr = window.devicePixelRatio || 1;
+      const rect = canvas.getBoundingClientRect();
+      canvas.width = Math.floor(rect.width * dpr);
+      canvas.height = Math.floor(rect.height * dpr);
+      ctx.setTransform(dpr,0,0,dpr,0,0);
+    }
+    window.addEventListener('resize', resize);
+    resize();
+
+    function ensureAudioNodes(){
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if (!analyser){
+        analyser = audioCtx.createAnalyser();
+        analyser.fftSize = 2048;
+        dataArray = new Uint8Array(analyser.frequencyBinCount);
+        timeArray = new Uint8Array(analyser.fftSize);
+      }
+      if (!srcNode){
+        srcNode = audioCtx.createMediaElementSource(audio);
+        srcNode.connect(analyser);
+        analyser.connect(audioCtx.destination);
+      }
+    }
+
+    function draw(){
+      rafId = requestAnimationFrame(draw);
+      if (!analyser) return;
+      ctx.clearRect(0,0,canvas.width, canvas.height);
+      const w = canvas.width, h = canvas.height;
+      // gradient background
+      const g = ctx.createLinearGradient(0,0,w,h);
+      g.addColorStop(0, '#0b1024'); g.addColorStop(1, '#0a0d18');
+      ctx.fillStyle = g; ctx.fillRect(0,0,w,h);
+
+      if (mode === 'bars'){
+        analyser.getByteFrequencyData(dataArray);
+        const N = dataArray.length;
+        const bars = 96;
+        const step = Math.floor(N / bars);
+        for (let i=0;i<bars;i++){
+          const v = dataArray[i*step] / 255; // 0..1
+          const bw = w / bars;
+          const bh = (h-30) * Math.pow(v, 1.4);
+          const x = i*bw; const y = h - bh;
+          ctx.fillStyle = `hsl(${180+ i*0.6},70%,${35+v*35}%)`;
+          ctx.fillRect(x+1,y,bw-2,bh);
+        }
+      } else if (mode === 'wave'){
+        analyser.getByteTimeDomainData(timeArray);
+        ctx.lineWidth = 2; ctx.strokeStyle = '#7dd3fc';
+        ctx.beginPath();
+        const N = timeArray.length;
+        for (let i=0;i<N;i++){
+          const v = (timeArray[i]/128.0)-1.0; // -1..1
+          const x = (i/N)*w;
+          const y = h/2 + v*(h/3);
+          if (i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+        }
+        ctx.stroke();
+      } else if (mode === 'radial'){
+        analyser.getByteFrequencyData(dataArray);
+        const N = 120; const step = Math.floor(dataArray.length/N);
+        const cx = w/2, cy = h*0.6; const R = Math.min(w,h)/4;
+        for (let i=0;i<N;i++){
+          const v = dataArray[i*step]/255; const a = (i/N)*Math.PI*2;
+          const r = R + v*R*0.9;
+          const x = cx + Math.cos(a)*r; const y = cy + Math.sin(a)*r;
+          ctx.strokeStyle = `hsla(${200+i},80%,60%,0.8)`; ctx.lineWidth = 2;
+          ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(x,y); ctx.stroke();
+        }
+      } else if (mode === 'dots'){
+        analyser.getByteFrequencyData(dataArray);
+        const N = 80; const step = Math.floor(dataArray.length/N);
+        for (let i=0;i<N;i++){
+          const v = dataArray[i*step]/255;
+          const x = (i+0.5)*(w/N); const y = h/2 + (Math.sin(i*0.3 + performance.now()*0.002))*h*0.25;
+          const r = 2 + v*10; ctx.fillStyle = `hsla(${160+i*2},85%,65%,0.9)`;
+          ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill();
+        }
+      }
+      renderOverlay();
+    }
+
+    // Caption overlays
+    let overlays = []; // [{t, text}]
+    let overlayIdx = -1; let lastShown = '';
+    function renderOverlay(){
+      const t = audio.currentTime || 0;
+      while (overlayIdx + 1 < overlays.length && overlays[overlayIdx+1].t <= t){
+        overlayIdx++;
+        lastShown = overlays[overlayIdx].text;
+        overlayEl.textContent = lastShown;
+        overlayEl.style.opacity = '1';
+        // fade out after 3s
+        const cur = lastShown;
+        setTimeout(() => { if (overlayEl.textContent === cur) overlayEl.style.opacity = '0'; }, 3000);
+      }
+    }
+
+    async function fetchOverlaysFor(title){
+      try{
+        const duration = Math.max(5, Math.floor(audio.duration || 0));
+        if (!duration) return;
+        const res = await apiPost('/v2/av/captions', { title, duration_seconds: duration, count: 12 });
+        overlays = (res && res.overlays) ? res.overlays : [];
+        overlayIdx = -1; lastShown = '';
+      } catch(e){ overlays = []; }
+    }
+
+    // File listing: try to parse directory index
+    async function scanAudio(){
+      const base = $("audioBase").value.trim() || '/audio/';
+      save('av_audio_base', base);
+      $("files").innerHTML = '<div class="note">Scanning...</div>';
+      try{
+        const res = await fetch(base, { mode:'cors' });
+        const html = await res.text();
+        const div = document.createElement('div'); div.innerHTML = html;
+        const links = Array.from(div.querySelectorAll('a'))
+          .map(a=>a.getAttribute('href'))
+          .filter(h => h && h.toLowerCase().endsWith('.mp3'));
+        renderFiles(links.map(h => new URL(h, base).toString()));
+      }catch(e){
+        $("files").innerHTML = '<div class="note">Could not scan folder. Add a full URL below and click Load, or use the file picker.</div>';
+      }
+    }
+
+    function renderFiles(urls){
+      const box = $("files"); box.innerHTML = '';
+      if (!urls || !urls.length){ box.innerHTML = '<div class="note">No MP3s found.</div>'; return; }
+      urls.forEach(u => {
+        const div = document.createElement('div'); div.className = 'file';
+        div.textContent = u.split('/').pop();
+        div.title = u;
+        div.onclick = () => { $("audioUrl").value = u; loadUrl(); };
+        box.appendChild(div);
+      });
+    }
+
+    // Loaders
+    function titleFromUrl(u){ try{ const n = decodeURIComponent(u.split('/').pop()||'Track'); return n.replace(/\.[^/.]+$/, ''); } catch(_){ return 'Track'; } }
+    async function loadUrl(){
+      const url = $("audioUrl").value.trim(); if (!url) return;
+      audio.src = url; audio.play().catch(()=>{});
+      ensureAudioNodes(); cancelAnimationFrame(rafId); draw();
+      await new Promise(r => { if (audio.readyState>=1) r(0); else audio.addEventListener('loadedmetadata', () => r(0), { once:true }); });
+      await fetchOverlaysFor(titleFromUrl(url));
+    }
+    function loadFile(file){
+      const url = URL.createObjectURL(file);
+      $("audioUrl").value = url;
+      loadUrl();
+    }
+
+    // Events
+    $("scanBtn").addEventListener('click', scanAudio);
+    $("loadBtn").addEventListener('click', loadUrl);
+    $("fileInput").addEventListener('change', (e) => { const f = e.target.files[0]; if (f) loadFile(f); });
+    $("modeBtn").addEventListener('click', () => {
+      const modes = ['bars','wave','radial','dots'];
+      const i = modes.indexOf(mode);
+      mode = modes[(i+1)%modes.length];
+      $("modeBadge").textContent = mode;
+    });
+    $("toggleToken").addEventListener('click', () => {
+      const t = $("token"); t.type = t.type === 'password' ? 'text' : 'password';
+      $("toggleToken").textContent = t.type === 'password' ? 'Show' : 'Hide';
+    });
+
+    // Init persisted settings
+    $("apiBase").value = load('av_api_base');
+    $("token").value = load('av_token');
+    $("audioBase").value = load('av_audio_base','/audio/');
+    // Optional auto-scan
+    // scanAudio();
+  </script>
+</body>
+</html>
+

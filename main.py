@@ -1,5 +1,6 @@
 import os
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
@@ -44,7 +45,7 @@ def create_app() -> FastAPI:
         load_policy()
 
     # Include routes
-    from routes import auth, chat, voice, memory, system, admin, lit
+    from routes import auth, chat, voice, memory, system, admin, lit, av
     app.include_router(auth.router)
     app.include_router(chat.router)
     app.include_router(voice.router)
@@ -52,6 +53,11 @@ def create_app() -> FastAPI:
     app.include_router(system.router)
     app.include_router(admin.router)
     app.include_router(lit.router)
+    app.include_router(av.router)
+
+    # Serve static admin pages from /admin (e.g., /admin/redisadmin.html)
+    if os.path.isdir("web"):
+        app.mount("/admin", StaticFiles(directory="web", html=True), name="admin-static")
 
     logger.info("Cutter app ready. Allowed origins: %s", origins)
     return app

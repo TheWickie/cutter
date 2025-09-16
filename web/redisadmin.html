@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Redis Admin</title>
+  <link rel="stylesheet" href="style.css" />
+  <style>
+    .admin-wrap { max-width: 760px; margin: 2rem auto; background: #0f1223; color: #e5e7eb; padding: 1rem 1.25rem; border-radius: 12px; border: 1px solid rgba(255,255,255,0.1);} 
+    .row { display: grid; grid-template-columns: 160px 1fr; gap: 10px; align-items: center; margin: 8px 0; }
+    input { padding: 8px 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.18); background: rgba(0,0,0,0.25); color: #f8fafc; width: 100%; }
+    button { padding: 8px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.18); background: linear-gradient(135deg,#10b98155,#22d3ee33); color: #e5f7ff; font-weight: 600; }
+    .note { font-size: .9rem; color: #cbd5e1; margin-top: 8px; }
+    .result { white-space: pre-wrap; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); border-radius: 8px; padding: 8px; margin-top: 10px; }
+  </style>
+  <script>
+    // Small helper to store/reuse settings
+    function $(id){ return document.getElementById(id); }
+    function baseUrl(){
+      const autoBase = (location.hostname === 'localhost') ? 'http://localhost:8000' : (location.origin);
+      const v = ($("apiBase").value || autoBase).replace(/\/$/,'');
+      sessionStorage.setItem('redis_admin_api_base', $("apiBase").value);
+      return v;
+    }
+    function token(){
+      const t = $("token").value.trim().replace(/^['"]|['"]$/g, '');
+      sessionStorage.setItem('redis_admin_token', t);
+      return t;
+    }
+    async function call(method, path){
+      const res = await fetch(baseUrl()+path, { method, headers: { 'Authorization': 'Bearer '+token() }});
+      const data = await res.json().catch(()=>({ raw: 'non-json response' }));
+      return data;
+    }
+    async function callJson(method, path, body){
+      const res = await fetch(baseUrl()+path, { method, headers: { 'Authorization': 'Bearer '+token(), 'Content-Type':'application/json' }, body: JSON.stringify(body||{}) });
+      const data = await res.json().catch(()=>({ raw: 'non-json response' }));
+      return data;
+    }
+    async function doAudit(){
+      const top = parseInt($("topN").value||'20',10);
+      $("out").textContent = 'Running audit...';
+      try {
+        const data = await call('GET', '/v2/admin/redis/audit?top='+encodeURIComponent(top));
+        $("out").textContent = JSON.stringify(data, null, 2);
+      } catch(e){ $("out").textContent = 'Error: '+(e?.message||e); }
+    }
+    async function purgeLit(){
+      if (!confirm('Delete ALL lit:* keys?')) return;
+      $("out").textContent = 'Purging lit:* ...';
+      try {
+        const data = await call('POST', '/v2/admin/redis/purge-lit');
+        $("out").textContent = JSON.stringify(data, null, 2);
+      } catch(e){ $("out").textContent = 'Error: '+(e?.message||e); }
+    }
+    async function purgeOrphan(){
+      const days = parseInt($("orphanDays").value||'30',10);
+      if (!confirm('Delete user:* with no mappings older than '+days+' days?')) return;
+      $("out").textContent = 'Purging orphan users...';
+      try {
+        const data = await call('POST', '/v2/admin/redis/purge-orphan-users?days='+encodeURIComponent(days));
+        $("out").textContent = JSON.stringify(data, null, 2);
+      } catch(e){ $("out").textContent = 'Error: '+(e?.message||e); }
+    }
+    async function purgeMemory(){
+      const days = parseInt($("memoryDays").value||'60',10);
+      if (!confirm('Delete memory:* older than '+days+' days or without users?')) return;
+      $("out").textContent = 'Purging memory...';
+      try {
+        const data = await call('POST', '/v2/admin/redis/purge-memory?days='+encodeURIComponent(days));
+        $("out").textContent = JSON.stringify(data, null, 2);
+      } catch(e){ $("out").textContent = 'Error: '+(e?.message||e); }
+    }
+    function init(){
+      $("apiBase").value = sessionStorage.getItem('redis_admin_api_base') || '';
+      $("token").value = sessionStorage.getItem('redis_admin_token') || '';
+      $("toggleToken").addEventListener('click', () => {
+        const t = $("token");
+        t.type = t.type === 'password' ? 'text' : 'password';
+        $("toggleToken").textContent = t.type === 'password' ? 'Show' : 'Hide';
+      });
+      doAudit();
+    }
+    window.addEventListener('DOMContentLoaded', init);
+  </script>
+  </head>
+<body class="chat-body">
+  <div class="admin-wrap">
+    <h2>Redis Admin</h2>
+    <div class="row"><label>API Base</label><input id="apiBase" placeholder="auto (leave blank)" /></div>
+    <div class="row"><label>Admin Token</label>
+      <div style="display:flex; gap:8px; align-items:center;">
+        <input id="token" type="password" placeholder="Paste ADMIN_TOKEN" />
+        <button id="toggleToken" type="button">Show</button>
+      </div>
+    </div>
+
+    <h3>Audit</h3>
+    <div class="row"><label>Top Keys</label>
+      <div style="display:flex; gap:8px; align-items:center;">
+        <input id="topN" value="20" style="max-width:120px" />
+        <button onclick="doAudit()">Run Audit</button>
+      </div>
+    </div>
+
+    <h3>Purges</h3>
+    <div class="row"><label>Literature index</label><button onclick="purgeLit()">Purge lit:*</button></div>
+    <div class="row"><label>Orphan users</label>
+      <div style="display:flex; gap:8px; align-items:center;">
+        <input id="orphanDays" value="30" style="max-width:120px" />
+        <button onclick="purgeOrphan()">Purge</button>
+      </div>
+    </div>
+    <div class="row"><label>User memory</label>
+      <div style="display:flex; gap:8px; align-items:center;">
+        <input id="memoryDays" value="60" style="max-width:120px" />
+        <button onclick="purgeMemory()">Purge</button>
+      </div>
+    </div>
+
+    <div id="out" class="result"></div>
+    <div class="note">All actions require a valid ADMIN_TOKEN and are rate-limited. Use caution: purges are destructive.</div>
+  </div>
+</body>
+</html>
+

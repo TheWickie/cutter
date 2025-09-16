@@ -1,4 +1,5 @@
 import os
+import json
 import uuid
 import datetime as dt
 from fastapi import APIRouter, HTTPException, Request
@@ -202,3 +203,194 @@ def debug_pass(body: AdminVerifyPass, request: Request):
         }
     )
     return result
+
+
+# --- Redis maintenance endpoints ---
+
+PREFIXES = [
+    "session:",
+    "memory:",
+    "user:",
+    "idcode_to_user:",
+    "number_to_user:",
+    "name_to_user:",
+    "lit:",
+    "rate:",
+]
+
+
+def _scan_keys(r, pattern: str):
+    if hasattr(r, "scan_iter"):
+        for k in r.scan_iter(pattern):
+            yield k
+    else:
+        # MemoryStore fallback
+        store = getattr(r, "store", None)
+        if isinstance(store, dict):
+            if pattern.endswith("*"):
+                pref = pattern[:-1]
+                for k in list(store.keys()):
+                    if str(k).startswith(pref):
+                        yield k
+            else:
+                if pattern in store:
+                    yield pattern
+
+
+def _memory_usage(r, key: str):
+    try:
+        if hasattr(r, "memory_usage"):
+            return int(r.memory_usage(key))  # type: ignore
+        return int(r.execute_command("MEMORY USAGE", key))
+    except Exception:
+        return None
+
+
+@router.get("/redis/audit")
+def redis_audit(request: Request, top: int = 20):
+    rate_limit(request)
+    _require_admin(request)
+    r = get_client()
+    counts = {p: 0 for p in PREFIXES}
+    other = 0
+    biggest = []
+    for key in _scan_keys(r, "*"):
+        matched = False
+        for p in PREFIXES:
+            if str(key).startswith(p):
+                counts[p] += 1
+                matched = True
+                break
+        if not matched:
+            other += 1
+        mu = _memory_usage(r, key)
+        if mu is not None:
+            biggest.append((mu, str(key)))
+    biggest.sort(key=lambda x: x[0], reverse=True)
+    try:
+        info = r.info() if hasattr(r, "info") else {}
+    except Exception:
+        info = {}
+    db0 = info.get("db0") if isinstance(info, dict) else None
+    total_keys = None
+    if isinstance(db0, dict):
+        total_keys = db0.get("keys")
+    return {
+        "used_memory": info.get("used_memory"),
+        "used_memory_human": info.get("used_memory_human"),
+        "used_memory_peak": info.get("used_memory_peak"),
+        "used_memory_peak_human": info.get("used_memory_peak_human"),
+        "total_keys": total_keys,
+        "counts": counts,
+        "other": other,
+        "top_keys": [{"key": k, "bytes": b} for b, k in biggest[: max(0, int(top))]],
+    }
+
+
+@router.post("/redis/purge-lit")
+def redis_purge_lit(request: Request):
+    rate_limit(request)
+    _require_admin(request)
+    r = get_client()
+    deleted = 0
+    for key in _scan_keys(r, "lit:*"):
+        try:
+            if hasattr(r, "unlink"):
+                r.unlink(key)
+            else:
+                r.delete(key)
+            deleted += 1
+        except Exception:
+            pass
+    return {"deleted": deleted}
+
+
+def _collect_mapped_user_ids(r):
+    uids = set()
+    for pref in ("idcode_to_user:", "number_to_user:", "name_to_user:"):
+        for key in _scan_keys(r, pref + "*"):
+            try:
+                uid = r.get(key)
+                if uid:
+                    uids.add(str(uid))
+            except Exception:
+                continue
+    return uids
+
+
+@router.post("/redis/purge-orphan-users")
+def redis_purge_orphan_users(request: Request, days: int = 30):
+    rate_limit(request)
+    _require_admin(request)
+    r = get_client()
+    cutoff = dt.datetime.utcnow() - dt.timedelta(days=days)
+    mapped = _collect_mapped_user_ids(r)
+    deleted = 0
+    scanned = 0
+    for key in _scan_keys(r, "user:*"):
+        scanned += 1
+        uid = str(key).split(":", 1)[1]
+        if uid in mapped:
+            continue
+        try:
+            data = r.hgetall(key)
+            created = data.get("created_at") or data.get("last_seen")
+            old_enough = True
+            if created:
+                try:
+                    ts = dt.datetime.fromisoformat(created)
+                    old_enough = ts < cutoff
+                except Exception:
+                    old_enough = True
+            if old_enough:
+                if hasattr(r, "unlink"):
+                    r.unlink(f"memory:{uid}")
+                    r.unlink(key)
+                else:
+                    r.delete(f"memory:{uid}")
+                    r.delete(key)
+                deleted += 1
+        except Exception:
+            continue
+    return {"scanned": scanned, "deleted": deleted, "older_than_days": days}
+
+
+@router.post("/redis/purge-memory")
+def redis_purge_memory(request: Request, days: int = 60):
+    rate_limit(request)
+    _require_admin(request)
+    r = get_client()
+    cutoff = dt.datetime.utcnow() - dt.timedelta(days=days)
+    deleted = 0
+    scanned = 0
+    for key in _scan_keys(r, "memory:*"):
+        scanned += 1
+        uid = str(key).split(":", 1)[1]
+        user_exists = bool(r.hgetall(f"user:{uid}"))
+        if not user_exists:
+            if hasattr(r, "unlink"):
+                r.unlink(key)
+            else:
+                r.delete(key)
+            deleted += 1
+            continue
+        try:
+            payload = r.get(key)
+            if not payload:
+                continue
+            data = json.loads(payload)
+            last = data.get("last_contact")
+            if last:
+                try:
+                    ts = dt.datetime.fromisoformat(last)
+                    if ts < cutoff:
+                        if hasattr(r, "unlink"):
+                            r.unlink(key)
+                        else:
+                            r.delete(key)
+                        deleted += 1
+                except Exception:
+                    pass
+        except Exception:
+            continue
+    return {"scanned": scanned, "deleted": deleted, "older_than_days": days}
